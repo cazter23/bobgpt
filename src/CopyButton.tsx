@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { CheckIcon, CopyIcon } from './icons';
 
-/** Copies a message's text to the clipboard. Shows a tick for a moment afterwards. */
-export default function CopyButton({ text }: { text: string }) {
+/** Copies text to the clipboard (`text`, or whatever `getText` returns at click time). Shows a tick for a moment afterwards. */
+export default function CopyButton({ text, getText, className }: { text?: string; getText?: () => string; className?: string }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef(0);
 
@@ -10,7 +10,7 @@ export default function CopyButton({ text }: { text: string }) {
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(getText ? getText() : (text ?? ''));
     } catch {
       return; // the browser refused; leave the icon as it was
     }
@@ -20,7 +20,7 @@ export default function CopyButton({ text }: { text: string }) {
   }
 
   return (
-    <button aria-label="Copy" title={copied ? 'Copied' : 'Copy'} onClick={copy}>
+    <button className={className} aria-label="Copy" title={copied ? 'Copied' : 'Copy'} onClick={copy}>
       {copied ? <CheckIcon /> : <CopyIcon />}
     </button>
   );

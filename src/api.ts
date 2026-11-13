@@ -7,6 +7,8 @@ export type ChatMessage = {
   role: Role;
   content: string;
   trimmed?: boolean; // on a reply: older messages were left out of what the model saw
+  thinking?: string; // on a reply from a reasoning model: what it thought first (never sent back to the model)
+  thoughtSeconds?: number; // how long that took
 };
 
 /** How a reply should be generated. */
@@ -105,6 +107,7 @@ export async function* streamChat(
   // The reply arrives as server-sent events: lines like `data: {...json...}`.
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = '';
+  let reasoning = false; // inside a reasoning_content stretch
   try {
     while (true) {
       const { value, done } = await reader.read();
@@ -129,8 +132,20 @@ export async function* streamChat(
         if (chunk.error) {
           throw new Error(typeof chunk.error === 'string' ? chunk.error : chunk.error.message);
         }
-        const piece = chunk.choices?.[0]?.delta?.content;
-        if (piece) yield piece;
+        const delta = chunk.choices?.[0]?.delta;
+        // Reasoning that LM Studio sends separately is wrapped in <think> tags, like the inline kind.
+        const thought = delta?.reasoning_content ?? delta?.reasoning;
+        if (thought) {
+          if (!reasoning) yield '<think>';
+          reasoning = true;
+          yield thought;
+        }
+        const piece = delta?.content;
+        if (piece) {
+          if (reasoning) yield '</think>';
+          reasoning = false;
+          yield piece;
+        }
       }
     }
   } finally {

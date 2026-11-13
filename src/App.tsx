@@ -6,6 +6,7 @@ import SettingsPanel from './SettingsPanel';
 import { loadSettings, saveSettings, type ModelLoadSettings, type Settings } from './settings';
 import { fitToContext, MessageTooLongError, tidyForModel } from './trim';
 import Markdown from './Markdown';
+import { splitThinking } from './thinking';
 import { ComposeIcon, EditIcon, GearIcon, GhostIcon, RegenerateIcon, SendIcon, SidebarIcon, StopIcon, TrashIcon } from './icons';
 import Sidebar from './Sidebar';
 import CopyButton from './CopyButton';
@@ -50,9 +51,9 @@ function pickGreeting(): string {
   return options[Math.floor(Math.random() * options.length)];
 }
 
-function withLastContent(messages: ChatMessage[], content: string): ChatMessage[] {
+function withLast(messages: ChatMessage[], patch: Partial<ChatMessage>): ChatMessage[] {
   const copy = messages.slice();
-  copy[copy.length - 1] = { ...copy[copy.length - 1], content };
+  copy[copy.length - 1] = { ...copy[copy.length - 1], ...patch };
   return copy;
 }
 
@@ -216,10 +217,23 @@ export default function App() {
     let reply = '';
     let trimmed = false;
     let frame = 0;
+    let startedAt = 0; // when the first piece arrived
+    let thoughtSeconds: number | undefined;
+    /** The reply so far, split into its thinking (if any) and the answer. */
+    const view = (streaming: boolean): Partial<ChatMessage> => {
+      const { thinking, answer, open } = splitThinking(reply, streaming);
+      // Done thinking once the answer starts, or once the reply is over (even if it was stopped mid-thought).
+      if (thinking && (!open || !streaming) && thoughtSeconds === undefined) thoughtSeconds = (Date.now() - startedAt) / 1000;
+      return {
+        content: answer,
+        ...(thinking ? { thinking } : {}),
+        ...(thoughtSeconds !== undefined ? { thoughtSeconds } : {}),
+      };
+    };
     // Re-render at most once per animation frame, not once per token.
     const flush = () => {
       frame = 0;
-      setMessages((prev) => withLastContent(prev, reply));
+      setMessages((prev) => withLast(prev, view(true)));
     };
 
     let sent = tidyForModel(history);
@@ -249,6 +263,7 @@ export default function App() {
 
       const options = { systemPrompt: settings.systemPrompt, temperature: settings.temperature, maxTokens: settings.maxTokens };
       for await (const piece of streamChat(currentModel, sent, options, controller.signal)) {
+        if (!startedAt) startedAt = Date.now();
         reply += piece;
         if (!frame) frame = requestAnimationFrame(flush);
       }
@@ -260,7 +275,9 @@ export default function App() {
     } finally {
       cancelAnimationFrame(frame);
       // Keep whatever arrived; drop the reply if nothing did. Then save it.
-      const finalMessages: ChatMessage[] = reply ? [...history, { role: 'assistant', content: reply, ...(trimmed ? { trimmed } : {}) }] : history;
+      const finalMessages: ChatMessage[] = reply
+        ? [...history, { role: 'assistant', ...view(false), ...(trimmed ? { trimmed } : {}) } as ChatMessage]
+        : history;
       setMessages(finalMessages);
       commit(chatId, finalMessages);
       setGenerating(false);
@@ -634,7 +651,17 @@ export default function App() {
                     return (
                       <div key={i} className={`msg assistant${generating && i === messages.length - 1 ? ' streaming' : ''}`}>
                         {m.trimmed && <p className="trim-note">Earlier messages were left out to fit the context.</p>}
-                      <div className="content">
+                        {m.thinking && (
+                          <details className="thinking">
+                            <summary>
+                              {m.thoughtSeconds === undefined
+                                ? 'Thinking…'
+                                : `Thought for ${Math.max(1, Math.round(m.thoughtSeconds))}s`}
+                            </summary>
+                            <div className="thinking-text">{m.thinking}</div>
+                          </details>
+                        )}
+                        <div className="content">
                           <Markdown text={m.content} />
                         </div>
                         {actions}

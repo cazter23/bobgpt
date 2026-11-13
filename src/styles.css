@@ -29,9 +29,9 @@
   --hl-comment: #8a8984;
   --hl-title: #1f5fa8;
   --hl-type: #a0612a;
-  /* Fonts: Plus Jakarta Sans for the interface and conversation, JetBrains Mono for code */
+  /* Fonts: Plus Jakarta Sans for the interface and conversation, Geist Mono for code */
   --font-ui: 'Plus Jakarta Sans Variable', system-ui, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono Variable', Consolas, monospace;
+  --font-mono: 'Geist Mono Variable', Consolas, monospace;
   color-scheme: light;
 }
 
@@ -595,3 +595,39 @@ body::before {
   --hl-type: #e6b673;
   color-scheme: dark;
 }
+
+/* Reasoning models: a collapsed "Thought for 12s" line above the answer */
+.thinking { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+.thinking summary {
+  display: inline-flex; align-items: center; gap: 6px;
+  cursor: pointer; list-style: none; user-select: none;
+}
+.thinking summary::-webkit-details-marker { display: none; }
+.thinking summary::before {
+  content: ''; width: 6px; height: 6px;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg); transition: transform 0.15s;
+}
+.thinking[open] summary::before { transform: rotate(45deg); }
+.thinking summary:hover { color: var(--text); }
+.thinking-text {
+  margin-top: 8px; padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--border);
+  white-space: pre-wrap; line-height: 1.55;
+}
+
+/* Code block corner: language label + copy button */
+.code-tools {
+  position: absolute; top: 4px; right: 6px; z-index: 1;
+  display: flex; align-items: center; gap: 4px;
+}
+.code-tools .code-lang { position: static; }
+.code-block pre { padding-top: 30px; }
+.code-copy {
+  display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; padding: 0;
+  border: none; border-radius: 6px;
+  background: transparent; color: var(--muted); opacity: 0.7; cursor: pointer;
+}
+.code-copy svg { width: 14px; height: 14px; }
+.code-copy:hover { background: var(--subtle); color: var(--text); opacity: 1; }
