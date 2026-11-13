@@ -497,7 +497,7 @@ export default function App() {
               <SidebarIcon />
             </button>
           )}
-          <span className="brand">HomeGPT</span>
+          <span className="brand">BobGPT</span>
           {incognito && <span className="incognito-tag">Incognito</span>}
         </span>
         <span className="topbar-right">

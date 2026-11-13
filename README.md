@@ -1,4 +1,4 @@
-# HomeGPT
+# BobGPT
 
 A minimal chat interface for models running in LM Studio. LM Studio runs the models in the background; this is the front end.
 
@@ -33,4 +33,4 @@ Open http://localhost:5173 in Edge or Chrome.
 - The gear icon opens settings: system prompt, temperature, max response length, what to do when a chat is too long for the model's context, and (for the loaded model) context length and GPU offload. Changing the last two reloads the model. Those two are remembered separately for each model.
 - The top bar shows the loaded model. If you load a different model in LM Studio, switch back to this tab and it picks it up.
 - Chats are saved automatically in this browser and listed in the sidebar. Use the folder button to make folders, and drag chats onto them (drag back to the empty list to take one out). Drag the sidebar's edge to make it large, medium or hidden. Clearing the browser's site data, or opening the app in a different browser, loses them.
-- The ghost icon in the top bar starts an incognito chat: it is never saved and never appears in the sidebar, and it disappears when you leave it or refresh the page. This only keeps it out of HomeGPT's saved chats; LM Studio's own logs are separate.
+- The ghost icon in the top bar starts an incognito chat: it is never saved and never appears in the sidebar, and it disappears when you leave it or refresh the page. This only keeps it out of BobGPT's saved chats; LM Studio's own logs are separate.

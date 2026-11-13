@@ -104,9 +104,8 @@ body {
 .topbar-button:hover { background: var(--subtle); color: var(--text); }
 .brand {
   font-weight: 600; font-size: 15px; letter-spacing: 0.01em;
-  background: linear-gradient(90deg, var(--accent-1), var(--accent-2));
-  -webkit-background-clip: text; background-clip: text;
-  color: transparent;
+  color: var(--text); /* near-white in dark mode and incognito, dark ink in light mode */
+  text-shadow: 0 0 14px var(--accent-glow);
 }
 .status { display: flex; align-items: center; gap: 8px; }
 .topbar .model { font-family: var(--font-mono); }
