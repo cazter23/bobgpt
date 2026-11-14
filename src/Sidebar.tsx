@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent } from 'react';
 import type { Chat, Folder, SidebarSize } from './storage';
-import { ChevronIcon, CloseIcon, EditIcon, FolderIcon, FolderPlusIcon, PlusIcon, SearchIcon, SlidersIcon, TrashIcon } from './icons';
+import { downloadChatMarkdown } from './export';
+import { ChevronIcon, CloseIcon, DownloadIcon, EditIcon, FolderIcon, FolderPlusIcon, PlusIcon, SearchIcon, SlidersIcon, TrashIcon } from './icons';
 import { searchChats, searchTerms, splitMatches } from './search';
 
 const WIDTHS: Record<SidebarSize, number> = { hidden: 0, medium: 240, large: 320 };
@@ -243,7 +244,7 @@ function useRename(current: string, onSave: (value: string) => void, label: stri
 }
 
 /** Rename and delete icons shown on hover. Delete asks "Delete?" first; clicking elsewhere cancels. */
-function RowActions(props: { onRename: () => void; onDelete: () => void; disabled?: boolean; confirmHint?: string }) {
+function RowActions(props: { onRename: () => void; onExport?: () => void; onDelete: () => void; disabled?: boolean; confirmHint?: string }) {
   const [confirming, setConfirming] = useState(false);
 
   if (confirming) {
@@ -266,6 +267,11 @@ function RowActions(props: { onRename: () => void; onDelete: () => void; disable
       <button aria-label="Rename" title="Rename" onClick={props.onRename} disabled={props.disabled}>
         <EditIcon />
       </button>
+      {props.onExport && (
+        <button aria-label="Export as Markdown" title="Export as Markdown (.md)" onClick={props.onExport}>
+          <DownloadIcon />
+        </button>
+      )}
       <button aria-label="Delete" title="Delete" onClick={() => setConfirming(true)} disabled={props.disabled}>
         <TrashIcon />
       </button>
@@ -306,7 +312,9 @@ function ChatRow({ chat, active, locked, dragged, onOpen, onRename, onDelete, on
           {chat.title}
         </button>
       )}
-      {!rename.renaming && <RowActions onRename={rename.start} onDelete={onDelete} disabled={locked} />}
+      {!rename.renaming && (
+        <RowActions onRename={rename.start} onExport={() => downloadChatMarkdown(chat)} onDelete={onDelete} disabled={locked} />
+      )}
     </li>
   );
 }
