@@ -254,11 +254,11 @@ export default function App() {
 
   // Theme and text size. "System" follows the computer's light/dark setting as it changes.
   useEffect(() => {
-    const apply = () => applyAppearance(settings.theme, settings.textSize, settings.colour, settings.customColour);
+    const apply = () => applyAppearance(settings.theme, settings.textSize, settings.colour, settings.customColour, settings.lineSpacing);
     apply();
     if (settings.theme !== 'system') return;
     return followSystemTheme(apply);
-  }, [settings.theme, settings.textSize, settings.colour, settings.customColour]);
+  }, [settings.theme, settings.textSize, settings.colour, settings.customColour, settings.lineSpacing]);
 
   useEffect(() => {
     applyFonts(settings.textFont, settings.codeFont);

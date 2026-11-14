@@ -4,6 +4,7 @@ import { CODE_FONT_IDS, TEXT_FONT_IDS, type CodeFont, type TextFont } from './fo
 export type OverflowPolicy = 'keep-start' | 'drop-oldest' | 'stop';
 export type Theme = 'system' | 'light' | 'dark';
 export type TextSize = 'small' | 'medium' | 'large';
+export type LineSpacing = 'compact' | 'normal' | 'relaxed';
 export type ThinkingView = 'collapsed' | 'open' | 'hidden';
 export const COLOURS = ['default', 'ocean', 'sunset', 'forest', 'rose', 'ember', 'graphite', 'plain', 'custom'] as const;
 export type Colour = (typeof COLOURS)[number];
@@ -22,6 +23,7 @@ export type Settings = {
   models: Record<string, ModelLoadSettings>; // by model key
   theme: Theme;
   textSize: TextSize;
+  lineSpacing: LineSpacing; // the height of each line of chat text
   colour: Colour; // the background gradient and accent
   customColour: string; // "#rrggbb", used when colour is 'custom'
   textFont: TextFont;
@@ -41,6 +43,7 @@ export const DEFAULT_SETTINGS: Settings = {
   models: {},
   theme: 'system',
   textSize: 'medium',
+  lineSpacing: 'normal',
   colour: 'default',
   customColour: '#7c5cff',
   textFont: 'jakarta',
@@ -67,6 +70,7 @@ export function loadSettings(): Settings {
       models: s.models && typeof s.models === 'object' ? s.models : {},
       theme: s.theme === 'light' || s.theme === 'dark' ? s.theme : 'system',
       textSize: s.textSize === 'small' || s.textSize === 'large' ? s.textSize : 'medium',
+      lineSpacing: s.lineSpacing === 'compact' || s.lineSpacing === 'relaxed' ? s.lineSpacing : 'normal',
       colour: COLOURS.includes(s.colour) ? s.colour : 'default',
       customColour: typeof s.customColour === 'string' && /^#[0-9a-f]{6}$/i.test(s.customColour) ? s.customColour : '#7c5cff',
       textFont: TEXT_FONT_IDS.includes(s.textFont) ? s.textFont : 'jakarta',

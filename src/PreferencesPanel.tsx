@@ -182,6 +182,15 @@ export default function PreferencesPanel({ settings, onChange, onClose, chatCoun
           </div>
 
           <div className="field">
+            <span className="field-label">Line spacing</span>
+            <Segmented
+              value={settings.lineSpacing}
+              onChange={(lineSpacing) => set({ lineSpacing })}
+              options={[['compact', 'Compact'], ['normal', 'Normal'], ['relaxed', 'Relaxed']]}
+            />
+          </div>
+
+          <div className="field">
             <span className="field-label">Thinking (reasoning models)</span>
             <Segmented
               value={settings.thinking}

@@ -132,7 +132,7 @@ body {
 .scroll { flex: 1; overflow-y: auto; }
 .scroll .column { padding-top: 24px; padding-bottom: 24px; }
 
-.msg { margin-bottom: 10px; animation: rise 0.25s ease-out; font-size: var(--chat-size, 15px); }
+.msg { margin-bottom: 10px; animation: rise 0.25s ease-out; font-size: var(--chat-size, 15px); line-height: var(--chat-leading, 1.6); }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 .msg.user { display: flex; flex-direction: column; align-items: flex-end; }
 .msg.user .bubble {
@@ -685,6 +685,8 @@ body::before {
 /* Settings: appearance, behaviour, data */
 :root[data-size="small"] { --chat-size: 14px; }
 :root[data-size="large"] { --chat-size: 17px; }
+:root[data-spacing="compact"] { --chat-leading: 1.4; }
+:root[data-spacing="relaxed"] { --chat-leading: 1.85; }
 .settings-section {
   margin: 6px 0 -6px; font-size: 11px; font-weight: 600;
   letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);

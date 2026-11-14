@@ -30,6 +30,13 @@ describe('applyAppearance', () => {
     expect(root.getAttribute('data-size')).toBe('large');
   });
 
+  it('sets the line spacing on <html>, and uses Normal when none is given', () => {
+    applyAppearance('dark', 'medium', 'default', '#7c5cff', 'relaxed');
+    expect(root.getAttribute('data-spacing')).toBe('relaxed');
+    applyAppearance('dark', 'medium', 'default', '#7c5cff');
+    expect(root.getAttribute('data-spacing')).toBe('normal');
+  });
+
   it('"system" follows the computer', () => {
     darkSystem(true);
     applyAppearance('system', 'medium', 'default', '#7c5cff');

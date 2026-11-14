@@ -325,3 +325,31 @@ describe('search', () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Search chats' })));
   });
 });
+
+describe('preferences', () => {
+  it('line spacing: choosing an option changes the page, is saved, and is still there after a restart', async () => {
+    const view = start();
+    const root = document.documentElement;
+    await typist.click(button('Preferences'));
+    const field = (await screen.findByText('Line spacing')).closest('.field') as HTMLElement;
+    const choose = (name: string) => typist.click(within(field).getByRole('button', { name }));
+    const saved = () => JSON.parse(localStorage.getItem('homegpt-settings')!).lineSpacing;
+
+    expect(within(field).getByRole('button', { name: 'Normal' }).getAttribute('aria-pressed')).toBe('true'); // today's look is the default
+    expect(root.getAttribute('data-spacing')).toBe('normal');
+
+    await choose('Compact');
+    expect(root.getAttribute('data-spacing')).toBe('compact');
+    await waitFor(() => expect(saved()).toBe('compact'));
+    expect(within(field).getByRole('button', { name: 'Compact' }).getAttribute('aria-pressed')).toBe('true');
+
+    await choose('Relaxed');
+    expect(root.getAttribute('data-spacing')).toBe('relaxed');
+    await waitFor(() => expect(saved()).toBe('relaxed'));
+
+    view.unmount();
+    root.removeAttribute('data-spacing');
+    start({ settings: { lineSpacing: 'relaxed' } });
+    await waitFor(() => expect(root.getAttribute('data-spacing')).toBe('relaxed'));
+  });
+});

@@ -1,6 +1,6 @@
 // Light/dark theme, text size and colour, applied to <html> (the default colours live in styles.css).
 import { CODE_FONTS, TEXT_FONTS, type CodeFont, type TextFont } from './fonts';
-import { COLOURS, type Colour, type TextSize, type Theme } from './settings';
+import { COLOURS, type Colour, type LineSpacing, type TextSize, type Theme } from './settings';
 
 const dark = () => window.matchMedia('(prefers-color-scheme: dark)');
 
@@ -150,11 +150,12 @@ function applyColour(colour: Colour, custom: string, isDark: boolean) {
     `html:root[data-incognito][data-theme] { ${incognito} }`;
 }
 
-export function applyAppearance(theme: Theme, textSize: TextSize, colour: Colour, custom: string) {
+export function applyAppearance(theme: Theme, textSize: TextSize, colour: Colour, custom: string, lineSpacing: LineSpacing = 'normal') {
   const root = document.documentElement;
   const isDark = theme === 'dark' || (theme === 'system' && dark().matches);
   root.setAttribute('data-theme', isDark ? 'dark' : 'light');
   root.setAttribute('data-size', textSize);
+  root.setAttribute('data-spacing', lineSpacing);
   applyColour(COLOURS.includes(colour) ? colour : 'default', custom, isDark);
 }
 

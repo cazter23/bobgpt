@@ -12,7 +12,7 @@ import { applyAppearance, applyFonts } from './theme';
 
 // Set the theme before the first paint, so there's no flash of the wrong colours.
 const saved = loadSettings();
-applyAppearance(saved.theme, saved.textSize, saved.colour, saved.customColour);
+applyAppearance(saved.theme, saved.textSize, saved.colour, saved.customColour, saved.lineSpacing);
 applyFonts(saved.textFont, saved.codeFont);
 
 // The built app can be installed and opens without its server running (see public/sw.js). Not in development,

@@ -26,6 +26,7 @@ describe('loadSettings', () => {
       overflow: 'explode',
       theme: 'purple',
       textSize: 'huge',
+      lineSpacing: 'airy',
       colour: 'neon',
       customColour: 'red',
       textFont: 'wingdings',
@@ -39,6 +40,14 @@ describe('loadSettings', () => {
   it('accepts every colour, font and overflow option the app offers', () => {
     store({ colour: 'custom', customColour: '#AbCdEf', textFont: 'comic', codeFont: 'jetbrains', overflow: 'drop-oldest' });
     expect(loadSettings()).toMatchObject({ colour: 'custom', customColour: '#AbCdEf', textFont: 'comic', codeFont: 'jetbrains', overflow: 'drop-oldest' });
+  });
+
+  it('remembers each line spacing option, and uses Normal (the original look) when nothing is saved', () => {
+    expect(loadSettings().lineSpacing).toBe('normal');
+    for (const lineSpacing of ['compact', 'normal', 'relaxed']) {
+      store({ lineSpacing });
+      expect(loadSettings().lineSpacing).toBe(lineSpacing);
+    }
   });
 
   it('treats a max response length of 0 as "no limit"', () => {
