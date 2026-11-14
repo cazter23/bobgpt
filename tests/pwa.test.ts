@@ -58,3 +58,26 @@ describe('the page', () => {
     for (const source of allowed) expect(source).toMatch(/^('self'|(http|ws):\/\/(localhost|127\.0\.0\.1):(1234|\*))$/);
   });
 });
+
+describe('the Desktop shortcut icon (bobgpt.ico)', () => {
+  const ico = readFileSync('bobgpt.ico');
+
+  it('is a real Windows icon with several sizes, from 16 to 256 pixels', () => {
+    expect([ico.readUInt16LE(0), ico.readUInt16LE(2)]).toEqual([0, 1]); // reserved, type "icon"
+    const count = ico.readUInt16LE(4);
+    expect(count).toBeGreaterThanOrEqual(4);
+    const sizes = Array.from({ length: count }, (_, i) => ico[6 + i * 16] || 256); // a stored 0 means 256
+    expect(sizes).toContain(16);
+    expect(sizes).toContain(256);
+  });
+
+  it('points each size at real picture data inside the file', () => {
+    const count = ico.readUInt16LE(4);
+    for (let i = 0; i < count; i++) {
+      const length = ico.readUInt32LE(6 + i * 16 + 8);
+      const offset = ico.readUInt32LE(6 + i * 16 + 12);
+      expect(offset + length).toBeLessThanOrEqual(ico.length);
+      expect(ico.subarray(offset + 1, offset + 4).toString()).toBe('PNG');
+    }
+  });
+});

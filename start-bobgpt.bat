@@ -6,6 +6,10 @@ rem With "startup" after the file name it doesn't open the browser; that is how 
 
 cd /d "%~dp0"
 if "%BOBGPT_PORT%"=="" set BOBGPT_PORT=5173
+rem Which browser to open BobGPT in. Chats are saved separately by each browser, so use the one you already use for it:
+rem   firefox  = a normal Firefox tab   edge or chrome = an app-style window (no tabs or address bar)
+rem   default  = whatever Windows uses for links
+if "%BOBGPT_BROWSER%"=="" set BOBGPT_BROWSER=firefox
 
 if not exist node_modules\vite\bin\vite.js (
   echo BobGPT isn't set up yet. Open a terminal in this folder and run:  npm install
@@ -40,4 +44,19 @@ if errorlevel 1 (
 )
 
 :ready
-if /i not "%~1"=="startup" start "" "http://localhost:%BOBGPT_PORT%"
+rem Open it (not when running at login).
+if /i "%~1"=="startup" exit /b 0
+set "URL=http://localhost:%BOBGPT_PORT%"
+if /i "%BOBGPT_BROWSER%"=="firefox" (
+  start "" firefox "%URL%"
+  if not errorlevel 1 exit /b 0
+)
+if /i "%BOBGPT_BROWSER%"=="edge" (
+  start "" msedge --app=%URL%
+  if not errorlevel 1 exit /b 0
+)
+if /i "%BOBGPT_BROWSER%"=="chrome" (
+  start "" chrome --app=%URL%
+  if not errorlevel 1 exit /b 0
+)
+start "" "%URL%"

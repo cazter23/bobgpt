@@ -32,13 +32,16 @@ Open http://localhost:5173 in Edge or Chrome.
 - **Double-click `start-bobgpt.bat`.** It builds the app first if the code has changed, starts the server in the background (no window) and opens http://localhost:5173.
 - **`stop-bobgpt.bat`** stops that server (to free its memory, or to run `npm run dev`).
 - **At login:** a shortcut called "BobGPT server" in your Windows Startup folder (press `Win+R`, type `shell:startup`) starts the server when you log in, without opening a browser. Delete the shortcut to turn that off.
+- **Desktop shortcut:** a "BobGPT" shortcut with the app's icon is on your Desktop. Double-clicking it does what `start-bobgpt.bat` does, and opens BobGPT in Firefox. Each browser keeps its own saved chats, so the launcher opens the browser you already use for BobGPT: change the line `BOBGPT_BROWSER` near the top of `start-bobgpt.bat` to `edge` or `chrome` (these open an app-style window with no tabs or address bar) or `default` (whatever Windows uses for links). To make another shortcut, right-click `start-bobgpt.bat` → Show more options → Send to → Desktop (create shortcut), then Properties → Change Icon → `bobgpt.ico`.
 - `npm run app` does the same from a terminal, with the server running in it.
 
 The built app and `npm run dev` both use port 5173, and your saved chats belong to that address, so only one can run at a time. Before using `npm run dev`, run `stop-bobgpt.bat`; otherwise the dev server moves to another port and your chats won't appear there.
 
 ## Installing it as an app
 
-With the built app running, open http://localhost:5173 in Edge or Chrome and use the install button at the end of the address bar (or ⋯ → Apps → Install BobGPT). It then opens in its own window with the BobGPT icon, no address bar, and can be pinned to the taskbar.
+Firefox can't install web apps on Windows, so with Firefox use the Desktop shortcut above. In Edge or Chrome:
+
+With the built app running, open http://localhost:5173 and use the install button at the end of the address bar (or ⋯ → Apps → Install BobGPT). It then opens in its own window with the BobGPT icon, no address bar, and can be pinned to the taskbar.
 
 The installed app keeps a copy of its own files, so its window opens even when the server isn't running; LM Studio still has to be running to chat. When the server is running, a rebuilt app arrives the next time you open it. The copy holds only the app's files, never your chats, which stay in the browser as before.
 
