@@ -236,3 +236,14 @@ export function AlertIcon() {
     </svg>
   );
 }
+
+/** Three dots in a row (⋯), for a row's menu of actions. */
+export function DotsIcon() {
+  return (
+    <svg {...base} stroke="none" fill="currentColor">
+      <circle cx="5.5" cy="12" r="1.8" />
+      <circle cx="12" cy="12" r="1.8" />
+      <circle cx="18.5" cy="12" r="1.8" />
+    </svg>
+  );
+}

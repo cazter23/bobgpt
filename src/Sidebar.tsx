@@ -3,6 +3,7 @@ import type { Chat, Folder, SidebarSize } from './storage';
 import { downloadChatMarkdown } from './export';
 import { ChevronIcon, CloseIcon, DownloadIcon, EditIcon, FolderIcon, FolderPlusIcon, PlusIcon, SearchIcon, SlidersIcon, TrashIcon } from './icons';
 import { searchChats, searchTerms, splitMatches } from './search';
+import RowMenu, { type MenuItem } from './RowMenu';
 
 const WIDTHS: Record<SidebarSize, number> = { hidden: 0, medium: 240, large: 320 };
 
@@ -245,8 +246,19 @@ function useRename(current: string, onSave: (value: string) => void, label: stri
   return { renaming, start, inputProps };
 }
 
-/** Rename and delete icons shown on hover. Delete asks "Delete?" first; clicking elsewhere cancels. */
-function RowActions(props: { onRename: () => void; onExport?: () => void; onDelete: () => void; disabled?: boolean; confirmHint?: string }) {
+/**
+ * A row's ⋯ menu: Rename, Export as Markdown (chats only) and Delete. Delete then asks "Delete?" in the row;
+ * clicking elsewhere cancels. `disabled` (while a reply is written) turns off Rename and Delete.
+ */
+function RowActions(props: {
+  name: string; // the chat's or folder's name, for screen readers
+  kind: 'chat' | 'folder';
+  onRename: () => void;
+  onExport?: () => void;
+  onDelete: () => void;
+  disabled?: boolean;
+  confirmHint?: string;
+}) {
   const [confirming, setConfirming] = useState(false);
 
   if (confirming) {
@@ -264,21 +276,12 @@ function RowActions(props: { onRename: () => void; onExport?: () => void; onDele
     );
   }
 
-  return (
-    <div className="row-actions">
-      <button aria-label="Rename" title="Rename" onClick={props.onRename} disabled={props.disabled}>
-        <EditIcon />
-      </button>
-      {props.onExport && (
-        <button aria-label="Export as Markdown" title="Export as Markdown (.md)" onClick={props.onExport}>
-          <DownloadIcon />
-        </button>
-      )}
-      <button aria-label="Delete" title="Delete" onClick={() => setConfirming(true)} disabled={props.disabled}>
-        <TrashIcon />
-      </button>
-    </div>
-  );
+  const items: MenuItem[] = [
+    { label: 'Rename', icon: <EditIcon />, onSelect: props.onRename, disabled: props.disabled },
+    ...(props.onExport ? [{ label: 'Export as Markdown', icon: <DownloadIcon />, onSelect: props.onExport }] : []),
+    { label: 'Delete', icon: <TrashIcon />, onSelect: () => setConfirming(true), disabled: props.disabled, danger: true },
+  ];
+  return <RowMenu items={items} label={`Options for ${props.kind} "${props.name}"`} />;
 }
 
 type RowProps = {
@@ -315,7 +318,7 @@ function ChatRow({ chat, active, locked, dragged, onOpen, onRename, onDelete, on
         </button>
       )}
       {!rename.renaming && (
-        <RowActions onRename={rename.start} onExport={() => downloadChatMarkdown(chat)} onDelete={onDelete} disabled={locked} />
+        <RowActions name={chat.title} kind="chat" onRename={rename.start} onExport={() => downloadChatMarkdown(chat)} onDelete={onDelete} disabled={locked} />
       )}
     </li>
   );
@@ -346,7 +349,7 @@ function FolderHeader({ folder, startRenaming, onToggle, onRename, onDelete }: F
         </button>
       )}
       {!rename.renaming && (
-        <RowActions onRename={rename.start} onDelete={onDelete} confirmHint="The chats inside go back to the main list" />
+        <RowActions name={folder.name} kind="folder" onRename={rename.start} onDelete={onDelete} confirmHint="The chats inside go back to the main list" />
       )}
     </div>
   );
