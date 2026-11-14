@@ -804,13 +804,24 @@ export default function App() {
 
       {leaveAction && (
         <div className="confirm-backdrop" onMouseDown={() => setLeaveAction(null)}>
-          <div className="confirm-card" role="alertdialog" onMouseDown={(e) => e.stopPropagation()}>
-            <p>Leave this incognito chat? It isn't saved, so it will be gone for good.</p>
-            <div className="load-actions">
-              <button className="link-button" onClick={() => setLeaveAction(null)} autoFocus>
+          <div
+            className="confirm-card"
+            role="alertdialog"
+            aria-labelledby="leave-title"
+            aria-describedby="leave-text"
+            onMouseDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.key === 'Escape' && setLeaveAction(null)}
+          >
+            <div className="confirm-icon">
+              <GhostIcon />
+            </div>
+            <h2 id="leave-title">Leave incognito chat?</h2>
+            <p id="leave-text">Nothing in it was saved, so it will be gone for good.</p>
+            <div className="confirm-actions">
+              <button className="secondary-button" onClick={() => setLeaveAction(null)} autoFocus>
                 Stay
               </button>
-              <button className="reload-button" onClick={leaveAction}>
+              <button className="danger-button" onClick={leaveAction}>
                 Discard chat
               </button>
             </div>

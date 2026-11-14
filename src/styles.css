@@ -1,6 +1,7 @@
 :root {
   /* Page background: soft lavender into periwinkle blue */
-  --page: linear-gradient(135deg, #e6dcff 0%, #dde3ff 45%, #d6e8ff 100%);
+  --page: linear-gradient(135deg, #e9e2fb 0%, #e3e7fb 45%, #dde9fb 100%);
+  --surface: #f8f6ff; /* top bar, sidebar and input box: solid, with a thin border */
   --bg: rgba(255, 255, 255, 0.72); /* input box, sits on top of the gradient */
   --text: #1f1d2b;
   --muted: #5f5c78;
@@ -9,15 +10,14 @@
   --code-bg: rgba(255, 255, 255, 0.65);
   /* Soft colour glows laid over the page gradient: violet, blue, pink */
   --blobs:
-    radial-gradient(60% 50% at 8% 10%, rgba(168, 130, 255, 0.55), transparent 70%),
-    radial-gradient(55% 50% at 92% 88%, rgba(100, 170, 255, 0.5), transparent 70%),
-    radial-gradient(40% 35% at 14% 92%, rgba(255, 170, 225, 0.35), transparent 70%);
+    radial-gradient(60% 50% at 8% 10%, rgba(168, 130, 255, 0.4), transparent 70%),
+    radial-gradient(55% 50% at 92% 88%, rgba(100, 170, 255, 0.35), transparent 70%);
   --glass: rgba(255, 255, 255, 0.4); /* frosted top bar and sidebar */
   --accent-1: #7c5cff;
   --accent-2: #3d8bff;
   --accent-glow: rgba(124, 92, 255, 0.22);
-  --bubble: linear-gradient(135deg, rgba(124, 92, 255, 0.2), rgba(61, 139, 255, 0.18));
-  --button: linear-gradient(135deg, #7c5cff, #3d8bff);
+  --bubble: rgba(124, 92, 255, 0.14);
+  --button: #7c5cff;
   --active-bg: rgba(124, 92, 255, 0.1);
   --scroll: rgba(60, 40, 120, 0.28);
   --ok: #2f9e5b;
@@ -38,7 +38,8 @@
 /* Dark theme: set by theme.ts (the "system" choice follows the computer). */
 :root[data-theme="dark"] {
     /* Deep indigo into midnight blue */
-    --page: linear-gradient(135deg, #261a4a 0%, #1c1f4a 45%, #122544 100%);
+    --page: linear-gradient(135deg, #241d45 0%, #1c2045 45%, #14253f 100%);
+    --surface: #181432;
     --bg: rgba(255, 255, 255, 0.06);
     --text: #ebe9f5;
     --muted: #a6a3c2;
@@ -46,14 +47,13 @@
     --subtle: rgba(255, 255, 255, 0.09);
     --code-bg: rgba(0, 0, 0, 0.25);
     --blobs:
-      radial-gradient(60% 50% at 8% 10%, rgba(124, 77, 255, 0.32), transparent 70%),
-      radial-gradient(55% 50% at 92% 88%, rgba(41, 121, 255, 0.26), transparent 70%),
-      radial-gradient(40% 35% at 14% 92%, rgba(255, 64, 160, 0.14), transparent 70%);
+      radial-gradient(60% 50% at 8% 10%, rgba(124, 77, 255, 0.22), transparent 70%),
+      radial-gradient(55% 50% at 92% 88%, rgba(41, 121, 255, 0.18), transparent 70%);
     --glass: rgba(255, 255, 255, 0.04);
     --accent-1: #9d7cff;
     --accent-2: #5aa2ff;
     --accent-glow: rgba(157, 124, 255, 0.28);
-    --bubble: linear-gradient(135deg, rgba(157, 124, 255, 0.3), rgba(90, 162, 255, 0.24));
+    --bubble: rgba(157, 124, 255, 0.22);
     --active-bg: rgba(157, 124, 255, 0.14);
     --scroll: rgba(255, 255, 255, 0.22);
     --hl-keyword: #c792ea;
@@ -394,8 +394,8 @@ body {
 .topbar-button:disabled:hover { background: transparent; color: var(--muted); }
 
 /* Model picker (top bar) */
-:root { --panel: rgba(250, 248, 255, 0.94); }
-:root[data-theme="dark"] { --panel: rgba(30, 26, 66, 0.94); }
+:root { --panel: #faf8ff; }
+:root[data-theme="dark"] { --panel: #1e1a42; }
 
 .picker { position: relative; }
 .picker-button {
@@ -562,14 +562,13 @@ body::before {
 :root {
   --page-incognito: linear-gradient(135deg, #140e2a 0%, #0f1229 45%, #091422 100%);
   --blobs-incognito:
-    radial-gradient(60% 50% at 8% 10%, rgba(124, 77, 255, 0.18), transparent 70%),
-    radial-gradient(55% 50% at 92% 88%, rgba(41, 121, 255, 0.14), transparent 70%),
-    radial-gradient(40% 35% at 14% 92%, rgba(255, 64, 160, 0.07), transparent 70%);
+    radial-gradient(60% 50% at 8% 10%, rgba(124, 77, 255, 0.14), transparent 70%),
+    radial-gradient(55% 50% at 92% 88%, rgba(41, 121, 255, 0.11), transparent 70%);
 }
 @media (prefers-reduced-motion: reduce) { :root, body::before { transition: none; } }
 
-/* Incognito theme: the same violet-to-blue look, just darker (always dark, even in light mode). App.tsx sets data-incognito on <html>. */
-:root[data-incognito] {
+/* Incognito theme in dark mode: the same look, just darker. (Light mode incognito is made in theme.ts.) App.tsx sets data-incognito on <html>. */
+:root[data-incognito][data-theme="dark"] {
   --bg: rgba(255, 255, 255, 0.05);
   --text: #ebe9f5;
   --muted: #a6a3c2;
@@ -580,11 +579,12 @@ body::before {
   --accent-1: #9d7cff;
   --accent-2: #5aa2ff;
   --accent-glow: rgba(157, 124, 255, 0.22);
-  --bubble: linear-gradient(135deg, rgba(157, 124, 255, 0.26), rgba(90, 162, 255, 0.2));
-  --button: linear-gradient(135deg, #7c5cff, #3d8bff);
+  --bubble: rgba(157, 124, 255, 0.2);
+  --button: #7c5cff;
+  --surface: #0e0a1f;
   --active-bg: rgba(157, 124, 255, 0.12);
   --scroll: rgba(255, 255, 255, 0.2);
-  --panel: rgba(20, 16, 44, 0.96);
+  --panel: #14102c;
   --danger: #e5786d;
   --hl-keyword: #c792ea;
   --hl-string: #a5d6a7;
@@ -713,4 +713,51 @@ body::before {
 .font-select:focus-visible { outline: none; border-color: var(--accent-1); }
 .font-select option { background: var(--select-bg); color: var(--text); }
 :root { --select-bg: #faf8ff; }
-:root[data-theme="dark"], :root[data-incognito] { --select-bg: #1e1a42; }
+:root[data-theme="dark"], :root[data-incognito][data-theme="dark"] { --select-bg: #1e1a42; }
+
+
+/* Calmer look: flat accents, no glow, solid panels and smaller corners. The gradient stays on the page background only. */
+.brand { text-shadow: none; }
+.topbar { background: var(--surface); border-bottom: 1px solid var(--border); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.sidebar { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.inputbox { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; border-radius: 12px; }
+.inputbox:focus-within { box-shadow: none; }
+.popover, .settings-panel { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.popover { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18); }
+.chat-row.active::before { background: var(--accent-1); }
+.load-bar { background: var(--accent-1); }
+
+.new-chat, .new-folder, .chat-row, .folder, .folder-header, .chat-list.drop-over, .popover-item, .popover-row,
+.field textarea, .field input[type='number'], .reload-button, .font-select, .segmented, .secondary-button,
+.inputbox .icon-button, .msg pre { border-radius: 8px; }
+.segmented button { border-radius: 6px; }
+.msg.user .bubble { border-radius: 12px; }
+.msg.user.editing textarea { border-radius: 10px; }
+.popover, .confirm-card { border-radius: 10px; }
+.incognito-tag { border-radius: 6px; }
+
+/* The incognito fade also covers the solid surfaces */
+@property --surface { syntax: "<color>"; inherits: true; initial-value: transparent; }
+:root { transition: --text 0.5s ease, --muted 0.5s ease, --border 0.5s ease, --subtle 0.5s ease, --code-bg 0.5s ease, --bg 0.5s ease, --glass 0.5s ease, --accent-1 0.5s ease, --accent-2 0.5s ease, --active-bg 0.5s ease, --panel 0.5s ease, --surface 0.5s ease; }
+
+/* "Leave incognito chat?" dialog */
+.confirm-backdrop { animation: fade 0.15s ease-out; }
+.confirm-card {
+  align-items: center; gap: 8px; padding: 24px 24px 20px; text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  animation: rise 0.18s ease-out;
+}
+.confirm-icon {
+  display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 4px;
+  border-radius: 50%; background: var(--active-bg); color: var(--accent-1);
+}
+.confirm-icon svg { width: 22px; height: 22px; }
+.confirm-card h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.confirm-card p { color: var(--muted); }
+.confirm-actions { display: flex; gap: 10px; width: 100%; margin-top: 12px; }
+.confirm-actions button { flex: 1; padding: 9px 14px; font: inherit; font-size: 14px; border-radius: 8px; cursor: pointer; }
+.primary-button { border: none; background: var(--button); color: #fff; }
+.primary-button:hover { filter: brightness(1.12); }
+.danger-button { border: none; background: #c9443a; color: #fff; font-weight: 600; }
+.danger-button:hover { background: #d9534a; }
+.danger-button:focus-visible { outline: 2px solid #c9443a; outline-offset: 2px; }

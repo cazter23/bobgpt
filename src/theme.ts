@@ -4,7 +4,7 @@ import { COLOURS, type Colour, type TextSize, type Theme } from './settings';
 
 const dark = () => window.matchMedia('(prefers-color-scheme: dark)');
 
-/** Three hues (0-360) for the two ends of the gradient and a third glow, plus how colourful it is. */
+/** Hues (0-360) for the two ends of the gradient, plus how colourful it is. */
 type Palette = { h1: number; h2: number; h3: number; sat: number; flat?: boolean };
 
 const PRESETS: Record<Exclude<Colour, 'default' | 'custom'>, Palette> = {
@@ -49,62 +49,84 @@ const mid = (a: number, b: number) => (a + ((((b - a + 540) % 360) - 180) / 2) +
 const warm = (h: number) => h >= 15 && h <= 190; // yellows and greens need to be darker to read on white
 
 /** The CSS variables for a palette. Same shape as the ones in styles.css. */
-function variables(p: Palette, isDark: boolean): string {
-  const { h1, h2, h3, sat } = p;
+/** With incognito set it's the version used inside incognito chats: darker in dark mode, dimmer and greyer in light mode. */
+function variables(p: Palette, isDark: boolean, incognito = false): string {
+  const { h1, h2, sat } = p;
   const s = (v: number) => Math.round(v * sat);
   const hm = mid(h1, h2);
   const c = (h: number, sPct: number, l: number, a = 1) => `hsl(${h} ${s(sPct)}% ${l}% / ${a})`;
-  const tweak = (h: number) => (isDark ? 0 : warm(h) ? -12 : 0);
+  const tweak = (h: number) => (isDark ? 0 : h >= 150 && h <= 200 ? -22 : warm(h) ? -12 : 0); // teals and greens need to be darkest
   const grey = sat === 0;
   const a1 = isDark ? (grey ? 78 : 74) : grey ? 38 : 68 + tweak(h1);
   const a2 = isDark ? (grey ? 64 : 68) : grey ? 52 : 62 + tweak(h2);
   const b1 = grey ? 38 : 60 + tweak(h1);
-  const b2 = grey ? 52 : 56 + tweak(h2);
 
   let page: string;
   let blobs: string;
-  if (p.flat) {
+  if (incognito && isDark) {
+    page = p.flat ? 'hsl(255 18% 6%)' : `linear-gradient(135deg, ${c(h1, 44, 9)} 0%, ${c(hm, 46, 8)} 45%, ${c(h2, 52, 7)} 100%)`;
+    blobs = p.flat
+      ? 'linear-gradient(transparent, transparent)'
+      : [
+          `radial-gradient(60% 50% at 8% 10%, ${c(h1, 100, 62, 0.14)}, transparent 70%)`,
+          `radial-gradient(55% 50% at 92% 88%, ${c(h2, 100, 58, 0.11)}, transparent 70%)`,
+        ].join(', ');
+  } else if (incognito) {
+    page = p.flat ? 'hsl(255 12% 86%)' : `linear-gradient(135deg, ${c(h1, 28, 85)} 0%, ${c(hm, 28, 84)} 45%, ${c(h2, 32, 82)} 100%)`;
+    blobs = p.flat
+      ? 'linear-gradient(transparent, transparent)'
+      : [
+          `radial-gradient(60% 50% at 8% 10%, ${c(h1, 60, 70, 0.25)}, transparent 70%)`,
+          `radial-gradient(55% 50% at 92% 88%, ${c(h2, 60, 66, 0.2)}, transparent 70%)`,
+        ].join(', ');
+  } else if (p.flat) {
     page = isDark ? 'hsl(255 18% 11%)' : 'hsl(255 25% 96%)';
     blobs = 'linear-gradient(transparent, transparent)';
   } else if (isDark) {
-    page = `linear-gradient(135deg, ${c(h1, 48, 20)} 0%, ${c(hm, 50, 20)} 45%, ${c(h2, 58, 17)} 100%)`;
+    page = `linear-gradient(135deg, ${c(h1, 44, 20)} 0%, ${c(hm, 46, 20)} 45%, ${c(h2, 52, 17)} 100%)`;
     blobs = [
-      `radial-gradient(60% 50% at 8% 10%, ${c(h1, 100, 62, 0.32)}, transparent 70%)`,
-      `radial-gradient(55% 50% at 92% 88%, ${c(h2, 100, 58, 0.26)}, transparent 70%)`,
-      `radial-gradient(40% 35% at 14% 92%, ${c(h3, 100, 62, 0.14)}, transparent 70%)`,
+      `radial-gradient(60% 50% at 8% 10%, ${c(h1, 100, 62, 0.22)}, transparent 70%)`,
+      `radial-gradient(55% 50% at 92% 88%, ${c(h2, 100, 58, 0.18)}, transparent 70%)`,
     ].join(', ');
   } else {
-    page = `linear-gradient(135deg, ${c(h1, 100, 93)} 0%, ${c(hm, 100, 93)} 45%, ${c(h2, 100, 92)} 100%)`;
+    page = `linear-gradient(135deg, ${c(h1, 70, 93)} 0%, ${c(hm, 70, 93)} 45%, ${c(h2, 70, 92)} 100%)`;
     blobs = [
-      `radial-gradient(60% 50% at 8% 10%, ${c(h1, 100, 76, 0.55)}, transparent 70%)`,
-      `radial-gradient(55% 50% at 92% 88%, ${c(h2, 100, 71, 0.5)}, transparent 70%)`,
-      `radial-gradient(40% 35% at 14% 92%, ${c(h3, 100, 80, 0.35)}, transparent 70%)`,
+      `radial-gradient(60% 50% at 8% 10%, ${c(h1, 100, 76, 0.4)}, transparent 70%)`,
+      `radial-gradient(55% 50% at 92% 88%, ${c(h2, 100, 71, 0.35)}, transparent 70%)`,
     ].join(', ');
   }
 
-  const glow = c(h1, 100, a1, isDark ? 0.28 : 0.22);
+  // Solid surface for the top bar, sidebar and input box
+  const surface = incognito
+    ? isDark
+      ? p.flat ? 'hsl(255 18% 5%)' : c(h1, 38, 7)
+      : p.flat ? 'hsl(255 12% 91%)' : c(h1, 22, 91)
+    : p.flat ? (isDark ? 'hsl(255 18% 8%)' : 'hsl(255 25% 99%)') : isDark ? c(h1, 38, 13) : c(h1, 70, 98);
+  const panel = incognito ? (isDark ? c(h1, 43, 11) : c(h1, 40, 95)) : isDark ? c(h1, 43, 19) : c(h1, 100, 98);
   return [
-    `--page: ${page};`,
-    `--blobs: ${blobs};`,
-    `--panel: ${isDark ? c(h1, 43, 19, 0.94) : c(h1, 100, 98, 0.94)};`, // Settings and Preferences
-    `--select-bg: ${isDark ? c(h1, 43, 19) : c(h1, 100, 98)};`, // drop-down lists
+    `${incognito ? '--page-incognito' : '--page'}: ${page};`,
+    `${incognito ? '--blobs-incognito' : '--blobs'}: ${blobs};`,
+    `--surface: ${surface};`,
+    `--panel: ${panel};`, // Settings and Preferences
+    `--select-bg: ${panel};`, // drop-down lists
     `--accent-1: ${c(h1, 100, a1)};`,
     `--accent-2: ${c(h2, 100, a2)};`,
-    `--accent-glow: ${glow};`,
-    `--bubble: linear-gradient(135deg, ${c(h1, 100, a1, isDark ? 0.3 : 0.2)}, ${c(h2, 100, a2, isDark ? 0.24 : 0.18)});`,
-    `--button: linear-gradient(135deg, ${c(h1, 100, b1)}, ${c(h2, 100, b2)});`,
+    `--bubble: ${c(h1, 100, a1, isDark ? (incognito ? 0.2 : 0.22) : 0.14)};`,
+    `--button: ${c(h1, 100, b1)};`,
     `--active-bg: ${c(h1, 100, a1, isDark ? 0.14 : 0.1)};`,
   ].join(' ');
 }
 
 /**
- * The colour choice goes in its own <style> element, after the main stylesheet. It skips incognito chats,
- * which keep their own darker look. "Default" removes it, so the stylesheet's colours apply untouched.
+ * The colour choice goes in its own <style> element, after the main stylesheet: one rule for normal chats and
+ * one for incognito chats (a darker version of the same colour). "Default" removes it, so the stylesheet's
+ * colours (Twilight) apply untouched.
  */
 function applyColour(colour: Colour, custom: string, isDark: boolean) {
   let el = document.getElementById('colour-theme') as HTMLStyleElement | null;
-  if (colour === 'default') {
-    el?.remove();
+  const isDefault = colour === 'default';
+  if (isDefault && isDark) {
+    el?.remove(); // Twilight is the stylesheet's own colours (dark incognito included)
     return;
   }
   if (!el) {
@@ -112,7 +134,20 @@ function applyColour(colour: Colour, custom: string, isDark: boolean) {
     el.id = 'colour-theme';
     document.head.appendChild(el);
   }
-  el.textContent = `html:root:not([data-incognito]) { ${variables(paletteFor(colour, custom), isDark)} }`;
+  const palette = isDefault ? { h1: 252, h2: 215, h3: 252, sat: 1 } : paletteFor(colour, custom);
+  const normal = variables(palette, isDark);
+  // The page backgrounds (normal and incognito) apply in every state. Otherwise the backdrop that is fading in or out
+  // would flash back to Twilight for a moment when entering or leaving incognito.
+  const incognito = variables(palette, isDark, true);
+  const page = /--page: [^;]*; --blobs: [^;]*;/.exec(normal)?.[0] ?? '';
+  const incognitoPage = /--page-incognito: [^;]*; --blobs-incognito: [^;]*;/.exec(incognito)?.[0] ?? '';
+  // [data-theme] on the selectors makes them win over the stylesheet's dark-mode and incognito rules.
+  el.textContent =
+    `html:root[data-theme] { ${isDefault ? '' : page} ${incognitoPage} }
+` +
+    (isDefault ? '' : `html:root:not([data-incognito]) { ${normal} }
+`) +
+    `html:root[data-incognito][data-theme] { ${incognito} }`;
 }
 
 export function applyAppearance(theme: Theme, textSize: TextSize, colour: Colour, custom: string) {
