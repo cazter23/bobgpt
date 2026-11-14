@@ -5,20 +5,20 @@ export default function ContextDial({ used, size, overflow }: { used: number; si
   const ratio = Math.min(used / size, 1);
   const percent = Math.round(ratio * 100);
   const level = used > size || ratio >= 0.95 ? 'full' : ratio >= 0.8 ? 'high' : 'ok';
-  const radius = 8;
+  const radius = 10;
   const circumference = 2 * Math.PI * radius;
 
   return (
     <div className={`ctx ${level}`} tabIndex={0} role="img" aria-label={`Context window ${percent}% full: ${used} of ${size} tokens`}>
-      <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
-        <circle className="ctx-track" cx="11" cy="11" r={radius} />
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
+        <circle className="ctx-track" cx="13" cy="13" r={radius} />
         <circle
           className="ctx-fill"
-          cx="11"
-          cy="11"
+          cx="13"
+          cy="13"
           r={radius}
           strokeDasharray={`${circumference * ratio} ${circumference}`}
-          transform="rotate(-90 11 11)"
+          transform="rotate(-90 13 13)"
         />
       </svg>
       <div className="ctx-pop">

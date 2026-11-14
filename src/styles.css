@@ -767,7 +767,7 @@ body::before {
 .ctx:hover, .ctx:focus-visible { background: var(--subtle); }
 .ctx svg { display: block; }
 .ctx-track { fill: none; stroke: var(--muted); stroke-width: 3; opacity: 0.3; }
-.ctx-fill { fill: none; stroke: var(--accent-1); stroke-width: 3; stroke-linecap: round; transition: stroke-dasharray 0.4s ease, stroke 0.2s; }
+.ctx-fill { fill: none; stroke: var(--accent-1); stroke-width: 3; stroke-linecap: butt; /* a rounded end would add length and overstate the fill */ transition: stroke-dasharray 0.4s ease, stroke 0.2s; }
 .ctx.high .ctx-fill { stroke: var(--warn); }
 .ctx.full .ctx-fill { stroke: var(--danger); }
 .ctx-pop {
