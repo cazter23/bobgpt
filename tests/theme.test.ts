@@ -81,6 +81,62 @@ describe('applyAppearance', () => {
     expect(lightness('--page-incognito')).toBeLessThan(lightness('--page'));
   });
 
+  describe('dark mode', () => {
+    const others = COLOURS.filter((c) => c !== 'default');
+    const firstStopLightness = (css: string, name: string) =>
+      Number(new RegExp(`${name}: linear-gradient\\(135deg, hsl\\(\\d+ \\d+% ([\\d.]+)%`).exec(css)?.[1]);
+
+    it('has a nearly black base, so the colour comes from the glows and does not go muddy', () => {
+      for (const colour of others.filter((c) => c !== 'plain')) {
+        applyAppearance('dark', 'medium', colour, '#33aa55');
+        expect(firstStopLightness(colourCss(), '--page'), colour).toBeLessThanOrEqual(12);
+      }
+    });
+
+    it('has clearly visible glows in the corners', () => {
+      applyAppearance('dark', 'medium', 'ember', '#7c5cff');
+      const alphas = [...colourCss().matchAll(/--blobs: [^;]*?\/ ([\d.]+)\)/g)].map((m) => Number(m[1]));
+      expect(alphas.length).toBeGreaterThan(0);
+      for (const a of alphas) expect(a).toBeGreaterThanOrEqual(0.25);
+    });
+
+    it("tints the text, dimmer text, borders and links with the colour, instead of using Twilight's lavender", () => {
+      applyAppearance('dark', 'medium', 'ember', '#7c5cff'); // ember's hues are 5 (red) and 38 (amber)
+      const css = colourCss();
+      expect(css).toContain('--text: hsl(5 28% 94% / 1);');
+      expect(css).toContain('--muted: hsl(5 16% 69% / 1);');
+      expect(css).toContain('--border: hsl(5 30% 90% / 0.14);');
+      expect(css).toContain('--hl-title: hsl(38 100% 76% / 1);');
+    });
+
+    it("keeps Graphite grey: grey text, and the stylesheet's own blue for links", () => {
+      applyAppearance('dark', 'medium', 'graphite', '#7c5cff');
+      const css = colourCss();
+      expect(css).toContain('--text: hsl(250 0% 94% / 1);');
+      expect(css).not.toContain('--hl-title');
+    });
+
+    it('also tints inside incognito chats, which stay darker than normal chats', () => {
+      applyAppearance('dark', 'medium', 'ocean', '#7c5cff');
+      const incognitoRule = colourCss().split(/\r?\n/).find((line) => line.includes('[data-incognito][data-theme]'))!;
+      expect(incognitoRule).toContain('--text:');
+      expect(firstStopLightness(colourCss(), '--page-incognito')).toBeLessThan(firstStopLightness(colourCss(), '--page'));
+    });
+  });
+
+  describe('light mode', () => {
+    it("does not change the stylesheet's text, link or border colours", () => {
+      for (const colour of COLOURS) {
+        applyAppearance('light', 'medium', colour, '#33aa55');
+        const css = colourCss();
+        expect(css, colour).not.toContain('--text:');
+        expect(css, colour).not.toContain('--muted:');
+        expect(css, colour).not.toContain('--border:');
+        expect(css, colour).not.toContain('--hl-title:');
+      }
+    });
+  });
+
   it('survives an unknown colour name', () => {
     expect(() => applyAppearance('light', 'medium', 'neon' as never, '#7c5cff')).not.toThrow();
   });

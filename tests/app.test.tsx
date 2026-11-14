@@ -353,3 +353,63 @@ describe('preferences', () => {
     await waitFor(() => expect(root.getAttribute('data-spacing')).toBe('relaxed'));
   });
 });
+
+describe('two tabs open at once', () => {
+  const SETTINGS = 'homegpt-settings';
+  const CHATS = 'homegpt-chats';
+  /** What the browser does in this tab when another tab changes saved data. */
+  const otherTabSaved = (key: string) => window.dispatchEvent(new StorageEvent('storage', { key, storageArea: localStorage }));
+  const writes = (spy: { mock: { calls: unknown[][] } }, key: string) => spy.mock.calls.filter(([k]) => k === key).length;
+  const settled = () => new Promise((resolve) => setTimeout(resolve, 150));
+
+  it("does not start a save loop when another version of the app saves settings in its own format", async () => {
+    start();
+    await waitFor(() => expect(localStorage.getItem(SETTINGS)).toContain('lineSpacing'));
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+
+    // An older version, which doesn't know the line spacing setting, saves its settings (without it).
+    const older = JSON.parse(localStorage.getItem(SETTINGS)!);
+    delete older.lineSpacing;
+    localStorage.setItem(SETTINGS, JSON.stringify(older));
+    setItem.mockClear();
+    otherTabSaved(SETTINGS);
+    await settled();
+
+    // Nothing differs, so this tab leaves the saved settings alone. (Writing them again, in this version's
+    // format, would set the other tab off, which would write its own, and so on for ever.)
+    expect(writes(setItem, SETTINGS)).toBe(0);
+  });
+
+  it('still takes on a real change made in the other tab, with no more than one save', async () => {
+    start();
+    await waitFor(() => expect(localStorage.getItem(SETTINGS)).toContain('lineSpacing'));
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+
+    localStorage.setItem(SETTINGS, JSON.stringify({ ...JSON.parse(localStorage.getItem(SETTINGS)!), lineSpacing: 'relaxed' }));
+    setItem.mockClear();
+    otherTabSaved(SETTINGS);
+
+    await waitFor(() => expect(document.documentElement.getAttribute('data-spacing')).toBe('relaxed'));
+    await settled();
+    expect(writes(setItem, SETTINGS)).toBeLessThanOrEqual(1);
+  });
+
+  it('shows a chat saved in the other tab, and leaves unchanged chats alone', async () => {
+    const mine = chat('Mine', [userMsg('hello'), bot('hi')], { id: 'mine' });
+    start({ chats: [mine] });
+    await screen.findByText('Mine');
+    await waitFor(() => expect(localStorage.getItem(CHATS)).toContain('Mine'));
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+
+    // Nothing changed: no write.
+    otherTabSaved(CHATS);
+    await settled();
+    expect(writes(setItem, CHATS)).toBe(0);
+
+    // A new chat appears: it is shown.
+    const theirs = chat('From the other tab', [userMsg('x'), bot('y')], { id: 'theirs' });
+    localStorage.setItem(CHATS, JSON.stringify([theirs, ...JSON.parse(localStorage.getItem(CHATS)!)]));
+    otherTabSaved(CHATS);
+    expect(await screen.findByText('From the other tab')).toBeTruthy();
+  });
+});

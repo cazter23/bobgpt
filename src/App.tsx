@@ -228,22 +228,30 @@ export default function App() {
   }, []);
 
   // Another tab saved its chats, folders or settings: take them on here, so that this tab's next save doesn't
-  // overwrite them. (This tab's own saves don't fire the event, and saving what was just read changes nothing.)
+  // overwrite them. Only what really differs is taken on: re-saving something equal would write it again (in this
+  // version's format, which another version of the app may not share) and set that tab off in turn, for ever.
   useEffect(() => {
+    const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
     const onStorage = (e: StorageEvent) => {
       if (e.storageArea !== localStorage) return;
       const all = e.key === null; // the other tab cleared the storage
       if (all || e.key === CHATS_KEY) {
         const fresh = loadChats();
-        setChats(fresh);
+        setChats((prev) => (same(prev, fresh) ? prev : fresh));
         // If the open chat was changed there, show that, unless a reply is being written or a message edited here.
         const open = activeId ? fresh.find((c) => c.id === activeId) : undefined;
         if (open && !busy.current && editingIndex === null) {
           setMessages((prev) => (JSON.stringify(prev) === JSON.stringify(open.messages) ? prev : open.messages));
         }
       }
-      if (all || e.key === FOLDERS_KEY) setFolders(loadFolders());
-      if (all || e.key === SETTINGS_KEY) setSettings(loadSettings());
+      if (all || e.key === FOLDERS_KEY) {
+        const fresh = loadFolders();
+        setFolders((prev) => (same(prev, fresh) ? prev : fresh));
+      }
+      if (all || e.key === SETTINGS_KEY) {
+        const fresh = loadSettings();
+        setSettings((prev) => (same(prev, fresh) ? prev : fresh));
+      }
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);

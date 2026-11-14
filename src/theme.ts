@@ -64,7 +64,7 @@ function variables(p: Palette, isDark: boolean, incognito = false): string {
   let page: string;
   let blobs: string;
   if (incognito && isDark) {
-    page = p.flat ? 'hsl(255 18% 6%)' : `linear-gradient(135deg, ${c(h1, 44, 9)} 0%, ${c(hm, 46, 8)} 45%, ${c(h2, 52, 7)} 100%)`;
+    page = p.flat ? 'hsl(255 18% 6%)' : `linear-gradient(135deg, ${c(h1, 40, 5)} 0%, ${c(hm, 40, 4.5)} 45%, ${c(h2, 46, 4)} 100%)`;
     blobs = p.flat
       ? 'linear-gradient(transparent, transparent)'
       : [
@@ -83,10 +83,11 @@ function variables(p: Palette, isDark: boolean, incognito = false): string {
     page = isDark ? 'hsl(255 18% 11%)' : 'hsl(255 25% 96%)';
     blobs = 'linear-gradient(transparent, transparent)';
   } else if (isDark) {
-    page = `linear-gradient(135deg, ${c(h1, 44, 20)} 0%, ${c(hm, 46, 20)} 45%, ${c(h2, 52, 17)} 100%)`;
+    // A saturated mid-dark wash goes muddy (brown, olive, grey-green), so the base is nearly black and the colour comes from the glows.
+    page = `linear-gradient(135deg, ${c(h1, 42, 9)} 0%, ${c(hm, 40, 8)} 45%, ${c(h2, 46, 8)} 100%)`;
     blobs = [
-      `radial-gradient(60% 50% at 8% 10%, ${c(h1, 100, 62, 0.22)}, transparent 70%)`,
-      `radial-gradient(55% 50% at 92% 88%, ${c(h2, 100, 58, 0.18)}, transparent 70%)`,
+      `radial-gradient(65% 55% at 6% 6%, ${c(h1, 92, 52, 0.3)}, transparent 70%)`,
+      `radial-gradient(60% 55% at 94% 94%, ${c(h2, 95, 54, 0.26)}, transparent 70%)`,
     ].join(', ');
   } else {
     page = `linear-gradient(135deg, ${c(h1, 70, 93)} 0%, ${c(hm, 70, 93)} 45%, ${c(h2, 70, 92)} 100%)`;
@@ -99,10 +100,10 @@ function variables(p: Palette, isDark: boolean, incognito = false): string {
   // Solid surface for the top bar, sidebar and input box
   const surface = incognito
     ? isDark
-      ? p.flat ? 'hsl(255 18% 5%)' : c(h1, 38, 7)
+      ? p.flat ? 'hsl(255 18% 5%)' : c(h1, 34, 5.5)
       : p.flat ? 'hsl(255 12% 91%)' : c(h1, 22, 91)
-    : p.flat ? (isDark ? 'hsl(255 18% 8%)' : 'hsl(255 25% 99%)') : isDark ? c(h1, 38, 13) : c(h1, 70, 98);
-  const panel = incognito ? (isDark ? c(h1, 43, 11) : c(h1, 40, 95)) : isDark ? c(h1, 43, 19) : c(h1, 100, 98);
+    : p.flat ? (isDark ? 'hsl(255 18% 8%)' : 'hsl(255 25% 99%)') : isDark ? c(h1, 32, 10.5) : c(h1, 70, 98);
+  const panel = incognito ? (isDark ? c(h1, 36, 9) : c(h1, 40, 95)) : isDark ? c(h1, 36, 15) : c(h1, 100, 98);
   return [
     `${incognito ? '--page-incognito' : '--page'}: ${page};`,
     `${incognito ? '--blobs-incognito' : '--blobs'}: ${blobs};`,
@@ -114,6 +115,16 @@ function variables(p: Palette, isDark: boolean, incognito = false): string {
     `--bubble: ${c(h1, 100, a1, isDark ? (incognito ? 0.2 : 0.22) : 0.14)};`,
     `--button: ${c(h1, 100, b1)};`,
     `--active-bg: ${c(h1, 100, a1, isDark ? 0.14 : 0.1)};`,
+    // The stylesheet's dark text, links and borders are tinted for Twilight (cool lavender), which clashes with other colours.
+    // Graphite stays grey, with the stylesheet's own blue for links.
+    ...(isDark
+      ? [
+          `--text: ${c(h1, 28, 94)};`,
+          `--muted: ${c(h1, 16, 69)};`,
+          `--border: ${c(h1, 30, 90, 0.14)};`,
+          ...(grey ? [] : [`--hl-title: ${c(h2, 100, 76)};`]),
+        ]
+      : []),
   ].join(' ');
 }
 
