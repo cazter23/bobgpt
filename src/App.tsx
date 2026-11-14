@@ -9,7 +9,7 @@ import { fitToContext, MessageTooLongError, tidyForModel } from './trim';
 import Markdown from './Markdown';
 import { splitThinking } from './thinking';
 import { downloadBackup, readBackup } from './backup';
-import { applyAppearance, followSystemTheme } from './theme';
+import { applyAppearance, applyFonts, followSystemTheme } from './theme';
 import {
   ComposeIcon,
   EditIcon,
@@ -152,6 +152,10 @@ export default function App() {
     if (settings.theme !== 'system') return;
     return followSystemTheme(apply);
   }, [settings.theme, settings.textSize, settings.colour, settings.customColour]);
+
+  useEffect(() => {
+    applyFonts(settings.textFont, settings.codeFont);
+  }, [settings.textFont, settings.codeFont]);
 
   // Incognito gets its own colours (see the end of styles.css), so the whole page, not just .app, changes.
   useEffect(() => {

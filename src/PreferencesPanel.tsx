@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import type { Colour, Settings } from './settings';
 import { swatchBackground } from './theme';
+import { CODE_FONTS, TEXT_FONTS, loadAllFonts } from './fonts';
 import { CloseIcon } from './icons';
 
 const SWATCHES: [Colour, string][] = [
-  ['default', 'Default'],
+  ['default', 'Twilight'],
   ['ocean', 'Ocean'],
   ['sunset', 'Sunset'],
   ['forest', 'Forest'],
@@ -62,6 +63,8 @@ export default function PreferencesPanel({ settings, onChange, onClose, chatCoun
       setDataNote(err instanceof Error ? err.message : "Couldn't read that file.");
     }
   }
+
+  useEffect(loadAllFonts, []); // so each font's name can be shown in that font
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -122,6 +125,28 @@ export default function PreferencesPanel({ settings, onChange, onClose, chatCoun
               </label>
             </div>
             <span className="hint">{settings.colour === 'custom' ? 'Custom' : SWATCHES.find(([v]) => v === settings.colour)?.[1]}</span>
+          </div>
+
+          <div className="field">
+            <span className="field-label">Text font</span>
+            <div className="font-options" role="group" aria-label="Text font">
+              {TEXT_FONTS.map((f) => (
+                <button key={f.id} style={{ fontFamily: f.stack }} aria-pressed={settings.textFont === f.id} onClick={() => set({ textFont: f.id })}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="field">
+            <span className="field-label">Code font</span>
+            <div className="font-options" role="group" aria-label="Code font">
+              {CODE_FONTS.map((f) => (
+                <button key={f.id} style={{ fontFamily: f.stack }} aria-pressed={settings.codeFont === f.id} onClick={() => set({ codeFont: f.id })}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="field">

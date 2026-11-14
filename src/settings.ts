@@ -1,4 +1,5 @@
 // Settings kept in this browser's localStorage.
+import { CODE_FONT_IDS, TEXT_FONT_IDS, type CodeFont, type TextFont } from './fonts';
 
 export type OverflowPolicy = 'keep-start' | 'drop-oldest';
 export type Theme = 'system' | 'light' | 'dark';
@@ -23,6 +24,8 @@ export type Settings = {
   textSize: TextSize;
   colour: Colour; // the background gradient and accent
   customColour: string; // "#rrggbb", used when colour is 'custom'
+  textFont: TextFont;
+  codeFont: CodeFont;
   thinking: ThinkingView; // how a reasoning model's thinking is shown
   ctrlEnterToSend: boolean; // false: Enter sends. true: Ctrl+Enter sends and Enter adds a new line
   autoTitle: boolean; // let the loaded model write chat names
@@ -39,6 +42,8 @@ export const DEFAULT_SETTINGS: Settings = {
   textSize: 'medium',
   colour: 'default',
   customColour: '#7c5cff',
+  textFont: 'jakarta',
+  codeFont: 'geist',
   thinking: 'collapsed',
   ctrlEnterToSend: false,
   autoTitle: true,
@@ -62,6 +67,8 @@ export function loadSettings(): Settings {
       textSize: s.textSize === 'small' || s.textSize === 'large' ? s.textSize : 'medium',
       colour: COLOURS.includes(s.colour) ? s.colour : 'default',
       customColour: typeof s.customColour === 'string' && /^#[0-9a-f]{6}$/i.test(s.customColour) ? s.customColour : '#7c5cff',
+      textFont: TEXT_FONT_IDS.includes(s.textFont) ? s.textFont : 'jakarta',
+      codeFont: CODE_FONT_IDS.includes(s.codeFont) ? s.codeFont : 'geist',
       thinking: s.thinking === 'open' || s.thinking === 'hidden' ? s.thinking : 'collapsed',
       ctrlEnterToSend: s.ctrlEnterToSend === true,
       autoTitle: s.autoTitle !== false,

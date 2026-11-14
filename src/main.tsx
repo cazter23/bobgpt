@@ -7,11 +7,12 @@ import '@fontsource-variable/geist-mono/wght-italic.css';
 import App from './App';
 import './styles.css';
 import { loadSettings } from './settings';
-import { applyAppearance } from './theme';
+import { applyAppearance, applyFonts } from './theme';
 
 // Set the theme before the first paint, so there's no flash of the wrong colours.
 const saved = loadSettings();
 applyAppearance(saved.theme, saved.textSize, saved.colour, saved.customColour);
+applyFonts(saved.textFont, saved.codeFont);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -1,4 +1,5 @@
 // Light/dark theme, text size and colour, applied to <html> (the default colours live in styles.css).
+import { CODE_FONTS, TEXT_FONTS, type CodeFont, type TextFont } from './fonts';
 import { COLOURS, type Colour, type TextSize, type Theme } from './settings';
 
 const dark = () => window.matchMedia('(prefers-color-scheme: dark)');
@@ -85,6 +86,7 @@ function variables(p: Palette, isDark: boolean): string {
   return [
     `--page: ${page};`,
     `--blobs: ${blobs};`,
+    `--panel: ${isDark ? c(h1, 43, 19, 0.94) : c(h1, 100, 98, 0.94)};`, // Settings and Preferences
     `--accent-1: ${c(h1, 100, a1)};`,
     `--accent-2: ${c(h2, 100, a2)};`,
     `--accent-glow: ${glow};`,
@@ -125,4 +127,15 @@ export function followSystemTheme(onChange: () => void): () => void {
   const query = dark();
   query.addEventListener('change', onChange);
   return () => query.removeEventListener('change', onChange);
+}
+
+/** Switch the text and code fonts (loading them first if they haven't been used yet). */
+export function applyFonts(text: TextFont, code: CodeFont) {
+  const root = document.documentElement;
+  const t = TEXT_FONTS.find((f) => f.id === text) ?? TEXT_FONTS[0];
+  const c = CODE_FONTS.find((f) => f.id === code) ?? CODE_FONTS[0];
+  root.style.setProperty('--font-ui', t.stack);
+  root.style.setProperty('--font-mono', c.stack);
+  t.load?.().catch(() => {});
+  c.load?.().catch(() => {});
 }
