@@ -414,12 +414,10 @@ export default function App() {
       );
       busy.current = false;
       // Like any error, this pauses the queue. (A message queued meanwhile would otherwise wait for good,
-      // as nothing else would tell the queue to try again.) The next reply that starts un-pauses it.
+      // as nothing else would tell the queue to try again.) Only Resume starts it again.
       setQueuePaused(true);
       return false;
     }
-
-    setQueuePaused(false);
 
     // Images go to IndexedDB before the chat that uses them is saved (never for incognito chats).
     // (Not waited on for ever: there's no Stop button yet at this point.)
@@ -568,9 +566,12 @@ export default function App() {
       setError(NO_VISION);
       return;
     }
-    // While a reply is being written, the message waits in the queue.
-    if (busy.current) {
-      if (loadingRef.current) return;
+    // While a reply is being written, the message waits in the queue. So it does while the queue is paused with
+    // messages in it: it joins the end, so they're answered in the order you wrote them, and the queue stays
+    // paused until you choose Resume.
+    const queuePausedWithItems = queuePaused && queue.length > 0;
+    if (busy.current || queuePausedWithItems) {
+      if (busy.current && loadingRef.current) return;
       setQueue((q) => [...q, { id: crypto.randomUUID(), text, images }]);
       setInput('');
       setAttachments([]);
@@ -683,6 +684,12 @@ export default function App() {
   useEffect(() => {
     if (queue.length <= 3) setQueueExpanded(false);
   }, [queue.length]);
+
+  // An empty queue is never paused. (A Stop or an error pauses it even when it's empty, and that pause
+  // would otherwise hold up messages queued during the next reply.)
+  useEffect(() => {
+    if (queue.length === 0 && queuePaused) setQueuePaused(false);
+  }, [queue.length, queuePaused]);
 
   function removeQueued(id: string) {
     const index = queue.findIndex((item) => item.id === id);
@@ -1091,7 +1098,15 @@ export default function App() {
           e.preventDefault();
           attachFiles(files);
         }}
-        placeholder={loading ? `Loading ${loading.name}…` : generating ? 'Queue another message…' : 'Message'}
+        placeholder={
+          loading
+            ? `Loading ${loading.name}…`
+            : generating
+              ? 'Queue another message…'
+              : queuePaused && queue.length > 0
+                ? 'Add to the paused queue…'
+                : 'Message'
+        }
         rows={1}
         autoFocus
       />
@@ -1103,7 +1118,7 @@ export default function App() {
         <button
           className="icon-button"
           aria-label="Send"
-          title={generating ? sendTitle.replace('Send', 'Queue') : sendTitle}
+          title={generating || (queuePaused && queue.length > 0) ? sendTitle.replace('Send', 'Queue') : sendTitle}
           onClick={send}
           // Dimmed while there's nothing to send, so it's clear at a glance whether Enter would do anything.
           disabled={!!loading || (!input.trim() && attachments.length === 0)}
