@@ -15,6 +15,8 @@ import { downloadBackup, readBackup } from './backup';
 import { firstMatchIndex, searchTerms } from './search';
 import { applyAppearance, applyFonts, followSystemTheme } from './theme';
 import {
+  AlertIcon,
+  ArrowDownIcon,
   CloseIcon,
   ComposeIcon,
   GearIcon,
@@ -79,6 +81,9 @@ function userMessage(text: string, images: string[], id: string = crypto.randomU
 
 /** True while files (not, say, a chat from the sidebar) are being dragged. */
 const draggingFiles = (e: { dataTransfer: DataTransfer | null }) => !!e.dataTransfer?.types.includes('Files');
+
+/** True when the chat is scrolled to (or within a few lines of) its newest message. */
+const nearBottom = (el: HTMLElement) => el.scrollHeight - el.scrollTop - el.clientHeight < 60;
 
 function withLast(messages: ChatMessage[], patch: Partial<ChatMessage>): ChatMessage[] {
   const copy = messages.slice();
@@ -182,6 +187,8 @@ export default function App() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const editRef = useRef<HTMLTextAreaElement>(null);
   const stickToBottom = useRef(true);
+  const [scrolledUp, setScrolledUp] = useState(false); // shows the "scroll to the newest message" button
+  const [retrying, setRetrying] = useState(false); // the error's Retry button is checking for LM Studio
 
   useAutoGrow(inputRef);
   useAutoGrow(editRef);
@@ -352,10 +359,35 @@ export default function App() {
   }, [refreshModel]);
 
   // Keep the newest text in view while streaming, unless the user scrolled up to read.
+  // (Also re-checks whether the "scroll to the newest message" button is needed, as the chat may have grown or shrunk.)
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
+    if (!el) return setScrolledUp(false);
+    if (stickToBottom.current) el.scrollTop = el.scrollHeight;
+    setScrolledUp(!nearBottom(el));
   }, [messages, error]);
+
+  function scrollToBottom() {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottom.current = true; // and keep following a reply that is still streaming
+    el.scrollTop = el.scrollHeight;
+    inputRef.current?.focus(); // the button disappears, so focus goes somewhere useful
+  }
+
+  /** The error's Retry button: checks for LM Studio again and, if it's there now, sends what's in the input box. */
+  async function retryConnection() {
+    setRetrying(true);
+    // Takes at least a moment, so "Checking…" can be seen even when the answer is instant.
+    const [{ status: now }] = await Promise.all([refreshModel(), new Promise((resolve) => setTimeout(resolve, 400))]);
+    setRetrying(false);
+    if (now === 'offline') {
+      setError("Still can't reach LM Studio. Make sure its server is running on port 1234 with CORS enabled.");
+      return;
+    }
+    setError(null);
+    if (input.trim() || attachments.length) send(); // a message that failed to send was put back in the box
+  }
 
   /**
    * Replaces the conversation with `history` (which ends with a user message) and streams a new reply.
@@ -408,6 +440,7 @@ export default function App() {
     setMessages([...history, { id: replyId, role: 'assistant', content: '' }]);
     setGenerating(true);
     stickToBottom.current = true;
+    setScrolledUp(false);
     stream(currentModel, history, chatId, replyId);
     return true;
   }
@@ -827,6 +860,7 @@ export default function App() {
     setError(null);
     setEditingIndex(null);
     stickToBottom.current = true;
+    setScrolledUp(false);
   }
 
   /** Adds the chats and folders from a backup file. Anything already here (same id) is left as it is. */
@@ -909,6 +943,7 @@ export default function App() {
   }, [editingIndex]);
 
   const sendTitle = `Send (${settings.ctrlEnterToSend ? 'Ctrl+Enter' : 'Enter'})`;
+  const activeTitle = incognito ? null : chats.find((c) => c.id === activeId)?.title; // shown in the top bar
   const firstUser = messages.findIndex((m) => m.role === 'user'); // replies before it have nothing to regenerate
 
   // The message rows' buttons all go through one function that never changes, so that MessageRow's memo can
@@ -923,6 +958,19 @@ export default function App() {
     else if (action === 'edit') handlers.startEdit(index);
     else handlers.deleteMessage(index);
   }, []);
+
+  // An error, in a small card. When LM Studio can't be reached it has a Retry button.
+  const errorCard = error && (
+    <div className="error-card" role="alert">
+      <AlertIcon />
+      <span className="error-text">{error}</span>
+      {status === 'offline' && (
+        <button className="small-button" onClick={retryConnection} disabled={retrying}>
+          {retrying ? 'Checking…' : 'Retry'}
+        </button>
+      )}
+    </div>
+  );
 
   const composer = (
     <>
@@ -1036,7 +1084,14 @@ export default function App() {
           <StopIcon />
         </button>
       ) : (
-        <button className="icon-button" aria-label="Send" title={generating ? sendTitle.replace('Send', 'Queue') : sendTitle} onClick={send} disabled={!!loading}>
+        <button
+          className="icon-button"
+          aria-label="Send"
+          title={generating ? sendTitle.replace('Send', 'Queue') : sendTitle}
+          onClick={send}
+          // Dimmed while there's nothing to send, so it's clear at a glance whether Enter would do anything.
+          disabled={!!loading || (!input.trim() && attachments.length === 0)}
+        >
           <SendIcon />
         </button>
       )}
@@ -1056,6 +1111,11 @@ export default function App() {
           )}
           <span className="brand">BobGPT</span>
           {incognito && <span className="incognito-tag">Incognito</span>}
+          {activeTitle && (
+            <span className="topbar-title" title={activeTitle}>
+              {activeTitle}
+            </span>
+          )}
         </span>
         <span className="topbar-right">
           {settings.showContext && status === 'ready' && contextSize > 0 && (
@@ -1147,7 +1207,7 @@ export default function App() {
                 <h1 className="greeting">{incognito ? 'Incognito chat' : greeting}</h1>
                 {incognito && <p className="incognito-note">Nothing here is saved. It disappears when you leave.</p>}
                 {composer}
-                {error && <p className="error">{error}</p>}
+                {errorCard}
               </div>
             </main>
           ) : (
@@ -1156,8 +1216,9 @@ export default function App() {
                 className="scroll"
                 ref={scrollRef}
                 onScroll={(e) => {
-                  const el = e.currentTarget;
-                  stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+                  const near = nearBottom(e.currentTarget);
+                  stickToBottom.current = near;
+                  setScrolledUp(!near);
                 }}
               >
                 <div className="column">
@@ -1178,7 +1239,13 @@ export default function App() {
                           />
                           <div className="edit-buttons">
                             <button onClick={() => setEditingIndex(null)}>Cancel</button>
-                            <button className="icon-button" aria-label="Send" title={sendTitle} onClick={submitEdit}>
+                            <button
+                              className="icon-button"
+                              aria-label="Send"
+                              title={sendTitle}
+                              onClick={submitEdit}
+                              disabled={!editText.trim() && !m.images?.length}
+                            >
                               <SendIcon />
                             </button>
                           </div>
@@ -1200,11 +1267,21 @@ export default function App() {
                       />
                     );
                   })}
-                  {error && <p className="error">{error}</p>}
+                  {errorCard}
                 </div>
               </main>
 
               <footer className="composer">
+                {scrolledUp && (
+                  <button
+                    className="to-bottom"
+                    aria-label="Scroll to the newest message"
+                    title="Scroll to the newest message"
+                    onClick={scrollToBottom}
+                  >
+                    <ArrowDownIcon />
+                  </button>
+                )}
                 <div className="column">{composer}</div>
               </footer>
             </>

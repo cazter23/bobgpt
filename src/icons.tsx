@@ -215,3 +215,24 @@ export function RegenerateIcon() {
     </svg>
   );
 }
+
+/** An arrow pointing down, for "scroll to the newest message". */
+export function ArrowDownIcon() {
+  return (
+    <svg {...base}>
+      <path d="M12 5v14" />
+      <path d="M6 13l6 6 6-6" />
+    </svg>
+  );
+}
+
+/** A circle with an exclamation mark, for errors. */
+export function AlertIcon() {
+  return (
+    <svg {...base}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7.5v5.5" />
+      <path d="M12 16.5v.01" />
+    </svg>
+  );
+}

@@ -24,21 +24,19 @@ type Props = {
 };
 
 function MessageRow({ message: m, index, generating, streaming, canRegenerate, thinkingView, showSpeed, onAction }: Props) {
+  // The same order on both sides: Copy, Edit (your messages only), Regenerate, Delete.
   const actions = (
     <div className={`actions${generating ? ' hidden' : ''}`}>
-      {m.role === 'assistant' && <CopyButton text={m.content} />}
+      <CopyButton text={m.content} />
+      {m.role === 'user' && (
+        <button aria-label="Edit" title="Edit" onClick={() => onAction('edit', index)}>
+          <EditIcon />
+        </button>
+      )}
       {canRegenerate && (
         <button aria-label="Regenerate" title="Regenerate" onClick={() => onAction('regenerate', index)}>
           <RegenerateIcon />
         </button>
-      )}
-      {m.role === 'user' && (
-        <>
-          <button aria-label="Edit" title="Edit" onClick={() => onAction('edit', index)}>
-            <EditIcon />
-          </button>
-          <CopyButton text={m.content} />
-        </>
       )}
       <button aria-label="Delete" title="Delete this message" onClick={() => onAction('delete', index)}>
         <TrashIcon />
