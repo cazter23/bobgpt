@@ -20,7 +20,7 @@ type Props = {
   onChange: (settings: Settings) => void;
   onClose: () => void;
   chatCount: number; // saved chats
-  onExport: () => void; // save a backup file
+  onExport: () => Promise<void>; // save a backup file (with the chats' images)
   onImport: (file: File) => Promise<string>; // add a backup file's chats; says what happened, or throws
   onDeleteAll: () => void;
   busy: boolean; // a reply is being written
@@ -215,7 +215,11 @@ export default function PreferencesPanel({ settings, onChange, onClose, chatCoun
           <h3 className="settings-section">Your data</h3>
 
           <div className="data-actions">
-            <button className="secondary-button" onClick={onExport} disabled={chatCount === 0}>
+            <button
+              className="secondary-button"
+              onClick={() => onExport().catch(() => setDataNote("Couldn't read the chats' images, so no backup was saved."))}
+              disabled={chatCount === 0}
+            >
               Back up chats
             </button>
             <button className="secondary-button" onClick={() => fileInput.current?.click()} disabled={busy}>

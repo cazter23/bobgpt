@@ -857,3 +857,40 @@ body::before {
 .search-result mark { background: var(--active-bg); color: var(--accent-1); font-weight: 600; border-radius: 2px; }
 .msg.flash { border-radius: 8px; animation: flash 1.8s ease-out; }
 @keyframes flash { 0%, 35% { box-shadow: 0 0 0 8px var(--active-bg); background: var(--active-bg); } 100% { box-shadow: 0 0 0 8px transparent; background: transparent; } }
+
+/* Images: a plus button and small thumbnails in the input box, and the images in your sent messages */
+.inputbox { flex-wrap: wrap; padding-left: 8px; }
+.inputbox textarea { flex: 1 1 0; min-width: 0; }
+.inputbox .attach-button {
+  display: flex; align-items: center; justify-content: center; flex: none;
+  width: 34px; height: 34px; padding: 0;
+  border: none; border-radius: 8px; background: transparent; color: var(--muted);
+}
+.inputbox .attach-button:hover { background: var(--subtle); color: var(--text); }
+.inputbox .attach-button[aria-disabled="true"] { opacity: 0.4; cursor: default; }
+.inputbox .attach-button[aria-disabled="true"]:hover { background: transparent; color: var(--muted); }
+.inputbox .attach-button svg { width: 18px; height: 18px; }
+.inputbox.drop-target { border-style: dashed; border-color: var(--accent-1); background: var(--active-bg); }
+
+.attachments { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 2px 4px; }
+.attachment {
+  position: relative; width: 56px; height: 56px; flex: none;
+  border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--subtle);
+  animation: queue-in 0.18s ease-out;
+}
+.attachment img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.inputbox .attachment-remove {
+  position: absolute; top: 3px; right: 3px;
+  display: grid; place-items: center; width: 20px; height: 20px; padding: 0;
+  border: 1px solid var(--border); border-radius: 50%;
+  background: var(--surface); color: var(--text);
+}
+.inputbox .attachment-remove:hover { background: var(--surface); color: var(--danger); }
+.attachment-remove svg { width: 12px; height: 12px; }
+
+.msg-images { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin: 4px 0; }
+.msg-images.with-text { margin-bottom: 8px; }
+.msg.user.editing .msg-images { margin: 0 0 8px; }
+.msg-images img { display: block; max-width: 100%; max-height: 220px; border-radius: 8px; }
+.img-missing { width: 100%; height: 100%; background: var(--subtle); }
+.msg-images .img-missing { width: 120px; height: 90px; border: 1px dashed var(--border); border-radius: 8px; }

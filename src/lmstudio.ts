@@ -30,6 +30,7 @@ export type LoadedModel = {
   identifier: string; // the name the chat endpoint uses
   key: string;
   contextLength: number;
+  vision: boolean; // it can see images
 };
 
 /** What to load a model with. Anything left out uses LM Studio's own default. */
@@ -59,6 +60,7 @@ export function listLoaded(): Promise<LoadedModel[]> {
         identifier: m.identifier,
         key: m.modelKey,
         contextLength: await m.getContextLength(),
+        vision: m.vision,
       })),
     );
   });

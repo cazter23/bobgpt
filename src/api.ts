@@ -7,6 +7,7 @@ export type Role = 'system' | 'user' | 'assistant';
 export type ChatMessage = {
   role: Role;
   content: string;
+  images?: string[]; // on one of your messages: ids of attached images (the images themselves are in images.ts)
   trimmed?: boolean; // on a reply: older messages were left out of what the model saw
   thinking?: string; // on a reply from a reasoning model: what it thought first (never sent back to the model)
   thoughtSeconds?: number; // how long that took
@@ -61,19 +62,32 @@ export async function getLoadedModel(): Promise<string | null> {
   return null;
 }
 
+/** A message's content as the model gets it: plain text, or images and text as OpenAI-compatible parts. */
+type SentContent = string | ({ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } })[];
+
+function sentContent(m: ChatMessage, images: ReadonlyMap<string, string>): SentContent {
+  const urls = (m.images ?? []).map((id) => images.get(id)).filter((url): url is string => !!url);
+  if (urls.length === 0) return m.content;
+  return [
+    ...urls.map((url) => ({ type: 'image_url' as const, image_url: { url } })),
+    ...(m.content ? [{ type: 'text' as const, text: m.content }] : []),
+  ];
+}
+
 /**
  * Streams a chat reply from LM Studio, yielding text pieces as they arrive.
- * Pass an AbortSignal to stop generation early.
+ * `images` maps the messages' image ids to their data URLs. Pass an AbortSignal to stop generation early.
  */
 export async function* streamChat(
   model: string,
   messages: ChatMessage[],
+  images: ReadonlyMap<string, string>,
   options: ChatOptions,
   signal: AbortSignal,
   stats?: { tokens: number }, // if given, counts the tokens that arrive (one per piece, or LM Studio's own count)
 ): AsyncGenerator<string> {
-  // Only role and content go to the model, with the system prompt (if any) first.
-  const sent = messages.map(({ role, content }) => ({ role, content }));
+  // Only role and content (with any images) go to the model, with the system prompt (if any) first.
+  const sent: { role: Role; content: SentContent }[] = messages.map((m) => ({ role: m.role, content: sentContent(m, images) }));
   if (options.systemPrompt.trim()) sent.unshift({ role: 'system', content: options.systemPrompt });
 
   let res: Response;

@@ -6,7 +6,9 @@ import ContextDial from './ContextDial';
 import SettingsPanel from './SettingsPanel';
 import PreferencesPanel from './PreferencesPanel';
 import { loadSettings, saveSettings, type ModelLoadSettings, type Settings } from './settings';
-import { ContextError, conversationTokens, fitToContext, tidyForModel } from './trim';
+import { ContextError, NoVisionError, conversationTokens, fitToContext, tidyForModel, withoutImages } from './trim';
+import { addImage, forgetImages, getImages, imageIdsIn, pruneImages, shrinkImage, storeImageData, storeImages } from './images';
+import { AttachmentThumb, MessageImages } from './ImageThumbs';
 import Markdown from './Markdown';
 import { splitThinking } from './thinking';
 import { downloadBackup, readBackup } from './backup';
@@ -18,6 +20,7 @@ import {
   EditIcon,
   GearIcon,
   GhostIcon,
+  PlusIcon,
   RegenerateIcon,
   SendIcon,
   SidebarIcon,
@@ -67,6 +70,16 @@ function pickGreeting(): string {
   ];
   return options[Math.floor(Math.random() * options.length)];
 }
+
+const NO_VISION = "The loaded model can't see images. Load a vision model to attach them.";
+
+/** One of your messages, with its images (if any). */
+function userMessage(text: string, images: string[]): ChatMessage {
+  return { role: 'user', content: text, ...(images.length ? { images } : {}) };
+}
+
+/** True while files (not, say, a chat from the sidebar) are being dragged. */
+const draggingFiles = (e: { dataTransfer: DataTransfer | null }) => !!e.dataTransfer?.types.includes('Files');
 
 function withLast(messages: ChatMessage[], patch: Partial<ChatMessage>): ChatMessage[] {
   const copy = messages.slice();
@@ -123,11 +136,16 @@ export default function App() {
   const [modelsVersion, setModelsVersion] = useState(0); // goes up after each swap
   const [incognito, setIncognito] = useState(false); // this chat is never saved
   const [leaveAction, setLeaveAction] = useState<(() => void) | null>(null); // waiting for "discard this incognito chat?"
-  const [queue, setQueue] = useState<{ id: string; text: string }[]>([]); // messages waiting to be sent, one at a time, each after the previous reply
+  const [queue, setQueue] = useState<{ id: string; text: string; images: string[] }[]>([]); // messages waiting to be sent, one at a time, each after the previous reply
+  const [attachments, setAttachments] = useState<string[]>([]); // ids of images waiting in the input box
+  const [vision, setVision] = useState(false); // the loaded model can see images
+  const [dragOver, setDragOver] = useState(false); // files are being dragged over the chat
+  const incognitoImages = useRef(new Set<string>()); // images from this incognito chat, held only in memory
+  const attachInput = useRef<HTMLInputElement>(null);
   const [searchFocus, setSearchFocus] = useState(0); // goes up on Ctrl+K, to focus the sidebar's search field
   const [jump, setJump] = useState<{ chatId: string; query: string } | null>(null); // scroll to a search match once the chat is open
   const [queueExpanded, setQueueExpanded] = useState(false); // show every queued message, not just the first few
-  const [leavingItem, setLeavingItem] = useState<{ id: string; text: string; index: number } | null>(null); // a removed row, shrinking away
+  const [leavingItem, setLeavingItem] = useState<{ id: string; text: string; images: string[]; index: number } | null>(null); // a removed row, shrinking away
   const [queuePaused, setQueuePaused] = useState(false); // after Stop or an error, the queue waits for you
   const pendingName = useRef<{ modelId: string; chatId: string; userText: string; replyText: string } | null>(null); // a chat name still to be asked for
 
@@ -155,6 +173,12 @@ export default function App() {
     if (!saveFolders(folders)) setError("Couldn't save your folders: the browser's storage is full or blocked.");
   }, [folders]);
   useEffect(() => saveSidebarSize(sidebarSize), [sidebarSize]);
+  // Images of saved chats are kept in IndexedDB. Once no saved chat uses one (its chat or message was
+  // deleted, or an edit cut the chat short) it is deleted too. Also runs on start, to tidy up.
+  useEffect(() => {
+    const timer = setTimeout(() => pruneImages(imageIdsIn(chats)).catch(() => {}), 1000);
+    return () => clearTimeout(timer);
+  }, [chats]);
   useEffect(() => {
     if (!saveSettings(settings)) setError("Couldn't save your settings: the browser's storage is full or blocked.");
   }, [settings]);
@@ -171,16 +195,26 @@ export default function App() {
     applyFonts(settings.textFont, settings.codeFont);
   }, [settings.textFont, settings.codeFont]);
 
-  // The context dial: the loaded model's context length...
+  // The context dial: the loaded model's context length (and whether it can see images)...
   useEffect(() => {
     if (status !== 'ready' || !model) {
       setContextSize(0);
+      setVision(false);
       return;
     }
     let cancelled = false;
     listLoaded()
-      .then((loaded) => !cancelled && setContextSize(loaded.find((m) => m.identifier === model)?.contextLength ?? 0))
-      .catch(() => !cancelled && setContextSize(0));
+      .then((loaded) => {
+        if (cancelled) return;
+        const m = loaded.find((m) => m.identifier === model);
+        setContextSize(m?.contextLength ?? 0);
+        setVision(!!m?.vision);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setContextSize(0);
+        setVision(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -193,7 +227,8 @@ export default function App() {
     const timer = setTimeout(async () => {
       const count = (counters.current[model] ??= tokenCounter(model));
       try {
-        const used = await conversationTokens(tidyForModel(messages), settings.systemPrompt, count);
+        // A model that can't see images is sent only the text, so their cost doesn't count then.
+        const used = await conversationTokens(tidyForModel(vision ? messages : withoutImages(messages)), settings.systemPrompt, count);
         if (!cancelled) setContextUsed(used);
       } catch {
         /* keep the last number */
@@ -203,7 +238,7 @@ export default function App() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [messages, settings.systemPrompt, settings.showContext, model, contextSize, generating]);
+  }, [messages, settings.systemPrompt, settings.showContext, model, contextSize, generating, vision]);
 
   // Incognito gets its own colours (see the end of styles.css), so the whole page, not just .app, changes.
   useEffect(() => {
@@ -282,6 +317,15 @@ export default function App() {
 
     setQueuePaused(false);
 
+    // Images go to IndexedDB before the chat that uses them is saved (never for incognito chats).
+    if (!incognito) {
+      try {
+        await storeImages(history.flatMap((m) => m.images ?? []));
+      } catch {
+        setError("Couldn't save the images in this browser's storage. They'll still be sent, but may be gone later.");
+      }
+    }
+
     // Save the conversation up to here right away (so an edit or regenerate cuts the saved copy too).
     const chatId = activeId ?? crypto.randomUUID();
     if (!incognito) setActiveId(chatId);
@@ -333,10 +377,13 @@ export default function App() {
       try {
         const loaded = (await listLoaded()).find((m) => m.identifier === currentModel);
         if (loaded) {
+          // A model that can't see images gets only the text of earlier messages (the chat keeps its images).
+          if (!loaded.vision && history[history.length - 1].images?.length) throw new NoVisionError();
+          const shown = loaded.vision ? history : withoutImages(history);
           const count = tokenCounter(currentModel);
           const system = settings.systemPrompt.trim() ? (await count(settings.systemPrompt)) + 8 : 0;
           const budget = loaded.contextLength - (settings.maxTokens ?? 1024) - system - 32;
-          const fitted = await fitToContext(tidyForModel(history), budget, settings.overflow, count);
+          const fitted = await fitToContext(tidyForModel(shown), budget, settings.overflow, count);
           sent = fitted.messages;
           trimmed = fitted.trimmed;
           if (trimmed) {
@@ -353,7 +400,8 @@ export default function App() {
       }
 
       const options = { systemPrompt: settings.systemPrompt, temperature: settings.temperature, maxTokens: settings.maxTokens };
-      for await (const piece of streamChat(currentModel, sent, options, controller.signal, stats)) {
+      const images = await getImages(sent.flatMap((m) => m.images ?? []));
+      for await (const piece of streamChat(currentModel, sent, images, options, controller.signal, stats)) {
         lastAt = Date.now();
         if (!startedAt) startedAt = lastAt;
         reply += piece;
@@ -398,17 +446,73 @@ export default function App() {
 
   async function send() {
     const text = input.trim();
-    if (!text) return;
+    const images = attachments;
+    if (!text && images.length === 0) return;
+    if (images.length > 0 && !vision) {
+      setError(NO_VISION);
+      return;
+    }
     // While a reply is being written, the message waits in the queue.
     if (busy.current) {
       if (loadingRef.current) return;
-      setQueue((q) => [...q, { id: crypto.randomUUID(), text }]);
+      setQueue((q) => [...q, { id: crypto.randomUUID(), text, images }]);
       setInput('');
+      setAttachments([]);
       return;
     }
     setInput(''); // cleared at once, so a quick second Enter can't send or queue it again
-    if (!(await replyTo([...messages, { role: 'user', content: text }]))) setInput(text);
+    setAttachments([]);
+    if (!(await replyTo([...messages, userMessage(text, images)]))) {
+      setInput(text);
+      setAttachments(images);
+    }
   }
+
+  /** Shrinks image files and adds them to the input box. They're kept in memory until the message is sent. */
+  async function attachFiles(files: File[]) {
+    if (files.length === 0) return;
+    const images = files.filter((f) => f.type.startsWith('image/'));
+    if (images.length === 0) {
+      setError('Only images can be attached.');
+      return;
+    }
+    if (!vision) {
+      setError(NO_VISION);
+      return;
+    }
+    setError(null);
+    for (const file of images) {
+      try {
+        const id = addImage(await shrinkImage(file));
+        if (incognito) incognitoImages.current.add(id);
+        setAttachments((a) => [...a, id]);
+      } catch {
+        setError("Couldn't read that image.");
+      }
+    }
+    inputRef.current?.focus();
+  }
+
+  function removeAttachment(id: string) {
+    setAttachments((a) => a.filter((x) => x !== id));
+    forgetImages([id]);
+  }
+
+  // A file dropped outside the chat would make the browser open it (and leave the app), so such drops are ignored.
+  useEffect(() => {
+    const ignore = (e: globalThis.DragEvent) => {
+      if (e.defaultPrevented || !draggingFiles(e)) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'none';
+      if (e.type === 'drop') setDragOver(false);
+    };
+    window.addEventListener('dragover', ignore);
+    window.addEventListener('drop', ignore);
+    return () => {
+      window.removeEventListener('dragover', ignore);
+      window.removeEventListener('drop', ignore);
+    };
+  }, []);
 
   // Ctrl+K: jump to the search field (opening the sidebar first if it's hidden).
   useEffect(() => {
@@ -453,6 +557,7 @@ export default function App() {
     if (index < 0) return;
     setLeavingItem({ ...queue[index], index });
     setQueue((q) => q.filter((item) => item.id !== id));
+    forgetImages(queue[index].images); // never sent, so never stored
     setTimeout(() => setLeavingItem((cur) => (cur?.id === id ? null : cur)), 200);
   }
 
@@ -461,7 +566,7 @@ export default function App() {
     if (generating || busy.current || queuePaused || queue.length === 0 || loading) return;
     const next = queue[0];
     setQueue((q) => q.slice(1));
-    replyTo([...messages, { role: 'user', content: next.text }]).then((started) => {
+    replyTo([...messages, userMessage(next.text, next.images)]).then((started) => {
       if (!started) {
         setQueue((q) => [next, ...q]);
         setQueuePaused(true);
@@ -502,8 +607,9 @@ export default function App() {
   function submitEdit() {
     if (editingIndex === null) return;
     const text = editText.trim();
-    if (!text) return;
-    replyTo([...messages.slice(0, editingIndex), { role: 'user', content: text }]);
+    const images = messages[editingIndex].images ?? []; // an edit keeps the message's images
+    if (!text && images.length === 0) return;
+    replyTo([...messages.slice(0, editingIndex), userMessage(text, images)]);
   }
 
   /** Unloads the current model and loads another, with its saved context length and GPU offload. */
@@ -599,12 +705,25 @@ export default function App() {
     } else if (messages.length > 0) {
       setLeaveAction(() => () => openChat(null));
     } else {
+      forgetIncognitoImages(attachments); // images still in the input box stay there
       setIncognito(false);
     }
   }
 
+  /** Lets go of the incognito chat's images (they were only ever in memory), apart from `keep`. */
+  function forgetIncognitoImages(keep: string[] = []) {
+    const ids = incognitoImages.current;
+    for (const id of keep) ids.delete(id);
+    forgetImages(ids);
+    ids.clear();
+  }
+
   function openChat(id: string | null, query?: string) {
     setJump(id && query ? { chatId: id, query } : null);
+    // Images waiting in the input box or the queue were never stored; they go with the chat being left.
+    forgetImages([...attachments, ...queue.flatMap((item) => item.images)]);
+    if (incognito) forgetIncognitoImages();
+    setAttachments([]);
     setQueue([]);
     setQueuePaused(false);
     setIncognito(false);
@@ -624,6 +743,13 @@ export default function App() {
     const haveFolder = new Set(folders.map((f) => f.id));
     const newChats = backup.chats.filter((c) => !haveChat.has(c.id));
     const newFolders = backup.folders.filter((f) => !haveFolder.has(f.id));
+    // The new chats' images are stored before the chats are added, so they're never missing.
+    const used = imageIdsIn(newChats);
+    try {
+      await storeImageData(Object.fromEntries(Object.entries(backup.images).filter(([id]) => used.has(id))));
+    } catch {
+      throw new Error("Couldn't store the backup's images in this browser, so nothing was restored.");
+    }
     setFolders((prev) => [...prev, ...newFolders]);
     setChats((prev) => [...prev, ...newChats].sort((a, b) => b.updatedAt - a.updatedAt));
 
@@ -705,14 +831,21 @@ export default function App() {
                 <button className="small-button" onClick={() => setQueuePaused(false)} disabled={!!loading}>
                   Resume
                 </button>
-                <button className="small-button" onClick={() => setQueue([])}>
+                <button
+                  className="small-button"
+                  onClick={() => {
+                    forgetImages(queue.flatMap((item) => item.images));
+                    setQueue([]);
+                  }}
+                >
                   Clear
                 </button>
               </span>
             </div>
           )}
           {(() => {
-            const rows: { id: string; text: string; leaving?: boolean }[] = queue.map((item) => ({ ...item }));
+            const rows: { id: string; text: string; images: string[]; leaving?: boolean }[] = queue.map((item) => ({ ...item }));
+            const imageCount = (n: number) => (n === 0 ? '' : n === 1 ? '1 image' : `${n} images`);
             if (leavingItem) rows.splice(Math.min(leavingItem.index, rows.length), 0, { ...leavingItem, leaving: true });
             const shown = queueExpanded || rows.length <= 3 ? rows : rows.slice(0, 3);
             return (
@@ -721,7 +854,7 @@ export default function App() {
                   <div key={row.id} className={`queue-item${i === 0 && !row.leaving ? ' next' : ''}${row.leaving ? ' leaving' : ''}`}>
                     <span className="queue-num">{i + 1}</span>
                     <span className="queue-text" title={row.text}>
-                      {row.text}
+                      {[row.text, imageCount(row.images.length)].filter(Boolean).join(' · ')}
                     </span>
                     {i === 0 && !row.leaving && !queuePaused && <span className="queue-next">Up next</span>}
                     {!row.leaving && (
@@ -746,17 +879,52 @@ export default function App() {
           })()}
         </div>
       )}
-    <div className={`inputbox${queue.length > 0 ? ' has-queue' : ''}`}>
+    <div className={`inputbox${queue.length > 0 ? ' has-queue' : ''}${dragOver ? ' drop-target' : ''}`}>
+      {attachments.length > 0 && (
+        <div className="attachments">
+          {attachments.map((id) => (
+            <AttachmentThumb key={id} id={id} onRemove={() => removeAttachment(id)} />
+          ))}
+        </div>
+      )}
+      {/* aria-disabled rather than disabled, so the tooltip saying why still shows */}
+      <button
+        className="attach-button"
+        aria-label="Attach images"
+        aria-disabled={!vision}
+        title={vision ? 'Attach images' : 'Needs a model that can see images'}
+        onClick={() => vision && attachInput.current?.click()}
+      >
+        <PlusIcon />
+      </button>
+      <input
+        ref={attachInput}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        onChange={(e) => {
+          attachFiles([...(e.target.files ?? [])]);
+          e.target.value = ''; // so choosing the same file again still works
+        }}
+      />
       <textarea
         ref={inputRef}
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={enterToSubmit(send, settings.ctrlEnterToSend)}
+        onPaste={(e) => {
+          // A pasted image is attached; if the clipboard also has text (e.g. cells copied from a spreadsheet), the text wins.
+          const files = [...e.clipboardData.files].filter((f) => f.type.startsWith('image/'));
+          if (files.length === 0 || e.clipboardData.types.includes('text/plain')) return;
+          e.preventDefault();
+          attachFiles(files);
+        }}
         placeholder={loading ? `Loading ${loading.name}…` : generating ? 'Queue another message…' : 'Message'}
         rows={1}
         autoFocus
       />
-      {generating && !input.trim() ? (
+      {generating && !input.trim() && attachments.length === 0 ? (
         <button className="icon-button" aria-label="Stop" title="Stop" onClick={() => abortRef.current?.abort()}>
           <StopIcon />
         </button>
@@ -846,7 +1014,25 @@ export default function App() {
           onOpenPreferences={openPreferences}
           focusSearch={searchFocus}
         />
-        <div className="pane">
+        <div
+          className="pane"
+          // Images can be dropped anywhere on the chat.
+          onDragOver={(e) => {
+            if (!draggingFiles(e)) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+            setDragOver(true);
+          }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
+          }}
+          onDrop={(e) => {
+            if (!draggingFiles(e)) return;
+            e.preventDefault();
+            setDragOver(false);
+            attachFiles([...e.dataTransfer.files]);
+          }}
+        >
           {messages.length === 0 ? (
             // Empty chat: greeting with the input box in the middle of the window.
             <main className="welcome">
@@ -892,6 +1078,7 @@ export default function App() {
                     if (m.role === 'user' && i === editingIndex) {
                       return (
                         <div key={i} className="msg user editing">
+                          {m.images?.length ? <MessageImages ids={m.images} withText={false} /> : null}
                           <textarea
                             ref={editRef}
                             value={editText}
@@ -915,7 +1102,10 @@ export default function App() {
                     if (m.role === 'user') {
                       return (
                         <div key={i} className="msg user" data-msg-index={i}>
-                          <div className="bubble">{m.content}</div>
+                          <div className="bubble">
+                            {m.images?.length ? <MessageImages ids={m.images} withText={!!m.content} /> : null}
+                            {m.content}
+                          </div>
                           {actions}
                         </div>
                       );
