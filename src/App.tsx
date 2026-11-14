@@ -172,6 +172,7 @@ export default function App() {
   const attachInput = useRef<HTMLInputElement>(null);
   const [searchFocus, setSearchFocus] = useState(0); // goes up on Ctrl+K, to focus the sidebar's search field
   const [jump, setJump] = useState<{ chatId: string; query: string } | null>(null); // scroll to a search match once the chat is open
+  const [newChatFolder, setNewChatFolder] = useState<string | null>(null); // the folder the empty new chat on screen will be saved in
   const [queueExpanded, setQueueExpanded] = useState(false); // show every queued message, not just the first few
   const [leavingItem, setLeavingItem] = useState<{ id: string; text: string; images: string[]; index: number } | null>(null); // a removed row, shrinking away
   const [queuePaused, setQueuePaused] = useState(false); // after Stop or an error, the queue waits for you
@@ -339,6 +340,8 @@ export default function App() {
         title: existing ? existing.title : titleFrom(msgs[0].content),
         messages: msgs,
         updatedAt: Date.now(),
+        // A new chat started from a folder's menu is saved in that folder (if it still exists).
+        ...(!existing && newChatFolder && folders.some((f) => f.id === newChatFolder) ? { folderId: newChatFolder } : {}),
       };
       return [chat, ...prev.filter((c) => c.id !== id)];
     });
@@ -442,6 +445,7 @@ export default function App() {
     const chatId = activeId ?? crypto.randomUUID();
     if (!incognito) setActiveId(chatId);
     commit(chatId, history);
+    setNewChatFolder(null); // it has been used: the chat exists now, and keeps its folder
 
     setEditingIndex(null);
     const replyId = crypto.randomUUID(); // the same while it streams and once it's saved
@@ -843,15 +847,15 @@ export default function App() {
     switchModel(m.key, m.name, options);
   }
 
-  /** Shows chat `id` (or an empty new chat when null). */
-  function showChat(id: string | null, query?: string) {
+  /** Shows chat `id` (or an empty new chat when null, which is saved in `folderId` if one is given). */
+  function showChat(id: string | null, query?: string, folderId?: string) {
     if (busy.current) return;
     // Leaving an incognito chat that has messages throws it away, so ask first.
     if (incognito && messages.length > 0) {
-      setLeaveAction(() => () => openChat(id, query));
+      setLeaveAction(() => () => openChat(id, query, folderId));
       return;
     }
-    openChat(id, query);
+    openChat(id, query, folderId);
   }
 
   /** Starts a new incognito chat, or leaves incognito if you're already in one. */
@@ -876,8 +880,10 @@ export default function App() {
     ids.clear();
   }
 
-  function openChat(id: string | null, query?: string) {
+  function openChat(id: string | null, query?: string, folderId?: string) {
     setJump(id && query ? { chatId: id, query } : null);
+    setNewChatFolder(id === null && folderId ? folderId : null);
+    if (folderId) setFolders((prev) => prev.map((f) => (f.id === folderId ? { ...f, collapsed: false } : f))); // so the chat can be seen where it will go
     // Images waiting in the input box or the queue were never stored; they go with the chat being left.
     forgetImages([...attachments, ...queue.flatMap((item) => item.images)]);
     if (incognito) forgetIncognitoImages();
@@ -1282,6 +1288,7 @@ export default function App() {
           onRenameFolder={renameFolder}
           onToggleFolder={toggleFolder}
           onDeleteFolder={deleteFolder}
+          onNewChatInFolder={(folderId) => showChat(null, undefined, folderId)}
           onMoveChat={moveChat}
           onOpenPreferences={openPreferences}
           focusSearch={searchFocus}
@@ -1311,6 +1318,9 @@ export default function App() {
               <div className="column">
                 <h1 className="greeting">{incognito ? 'Incognito chat' : greeting}</h1>
                 {incognito && <p className="incognito-note">Nothing here is saved. It disappears when you leave.</p>}
+                {!incognito && newChatFolder && folders.some((f) => f.id === newChatFolder) && (
+                  <p className="folder-note">This chat will be saved in “{folders.find((f) => f.id === newChatFolder)?.name}”.</p>
+                )}
                 {composer}
                 {errorCard}
               </div>

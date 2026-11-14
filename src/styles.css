@@ -592,7 +592,7 @@ legend.field-label { display: block; margin-bottom: 6px; }
   padding: 2px 8px; border: 1px dashed var(--accent-1); border-radius: 999px;
   color: var(--accent-1); font-size: 12px;
 }
-.incognito-note { margin: -12px 0 20px; text-align: center; color: var(--muted); font-size: 14px; }
+.incognito-note, .folder-note { margin: -12px 0 20px; text-align: center; color: var(--muted); font-size: 14px; }
 .app.incognito .inputbox { border-style: dashed; border-color: var(--accent-1); }
 .confirm-backdrop {
   position: fixed; inset: 0; z-index: 50;

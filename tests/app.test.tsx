@@ -536,3 +536,145 @@ describe('keyboard shortcuts', () => {
     await waitFor(() => expect(document.activeElement).toBe(messageBox())); // so you can queue another message
   });
 });
+
+describe('New chat in folder', () => {
+  const seedFolders = () =>
+    localStorage.setItem(
+      'homegpt-folders',
+      JSON.stringify([
+        { id: 'f1', name: 'Work', collapsed: false },
+        { id: 'f2', name: 'Play', collapsed: true },
+      ]),
+    );
+  const openFolderMenu = async (name: string) => {
+    await typist.click(await screen.findByRole('button', { name: `Options for folder "${name}"` }));
+    return screen.findByRole('menu');
+  };
+  const chooseNewChatIn = async (name: string) => {
+    const menu = await openFolderMenu(name);
+    await typist.click(within(menu).getByRole('menuitem', { name: 'New chat in folder' }));
+  };
+  const savedChats = () => JSON.parse(localStorage.getItem('homegpt-chats') ?? '[]');
+  const note = () => document.querySelector('.folder-note')?.textContent ?? null;
+
+  it("is the first choice in a folder's menu, and is not in a chat's menu", async () => {
+    seedFolders();
+    start({ chats: [chat('Some chat', [userMsg('q'), bot('a')], { id: 'c1', folderId: 'f1' })] });
+    const menu = await openFolderMenu('Work');
+    const items = within(menu).getAllByRole('menuitem').map((el) => el.textContent);
+    expect(items).toEqual(['New chat in folder', 'Rename', 'Delete']);
+    await typist.keyboard('{Escape}');
+
+    await typist.click(await screen.findByRole('button', { name: 'Options for chat "Some chat"' }));
+    const chatItems = within(await screen.findByRole('menu')).getAllByRole('menuitem').map((el) => el.textContent);
+    expect(chatItems).not.toContain('New chat in folder');
+  });
+
+  it('opens an empty chat that says where it will be saved, and saves it in that folder once you send something', async () => {
+    seedFolders();
+    start();
+    await chooseNewChatIn('Work');
+    expect(note()).toBe('This chat will be saved in “Work”.');
+    expect(document.querySelector('.greeting')).not.toBeNull();
+
+    await send('Hello there');
+    await requestArrives(1);
+    server.replies[0].say('Hi!');
+    server.replies[0].finish();
+    await screen.findByText('Hi!');
+
+    await waitFor(() => expect(savedChats()[0].folderId).toBe('f1'));
+    const inFolder = document.querySelector('.folder-chats') as HTMLElement;
+    expect(within(inFolder).getByText('Hello there')).toBeTruthy();
+  });
+
+  it('opens a collapsed folder, so you can see where the chat will go', async () => {
+    seedFolders();
+    start();
+    const title = await screen.findByTitle('Play'); // the folder's own button (the ⋯ button has a longer name)
+    expect(title.getAttribute('aria-expanded')).toBe('false');
+    await chooseNewChatIn('Play');
+    await waitFor(() => expect(screen.getByTitle('Play').getAttribute('aria-expanded')).toBe('true'));
+  });
+
+  it('only applies to that one new chat: starting an ordinary new chat afterwards saves it outside any folder', async () => {
+    seedFolders();
+    start();
+    await chooseNewChatIn('Work');
+    expect(note()).not.toBeNull();
+    await typist.click(topbarButton('New chat'));
+    await waitFor(() => expect(note()).toBeNull());
+
+    await send('Loose chat');
+    await requestArrives(1);
+    server.replies[0].say('ok');
+    server.replies[0].finish();
+    await screen.findByText('ok');
+    await waitFor(() => expect(savedChats()).toHaveLength(1));
+    expect(savedChats()[0].folderId ?? null).toBeNull();
+  });
+
+  it('keeps the chat in its folder for the rest of the conversation', async () => {
+    seedFolders();
+    start();
+    await chooseNewChatIn('Work');
+    await send('first');
+    await requestArrives(1);
+    server.replies[0].say('one');
+    server.replies[0].finish();
+    await screen.findByText('one');
+    await send('second');
+    await requestArrives(2);
+    server.replies[1].say('two');
+    server.replies[1].finish();
+    await screen.findByText('two');
+    await waitFor(() => expect(savedChats()[0].messages).toHaveLength(4));
+    expect(savedChats()).toHaveLength(1);
+    expect(savedChats()[0].folderId).toBe('f1');
+  });
+
+  it('saves the chat outside any folder if the folder is deleted before you send anything', async () => {
+    seedFolders();
+    start();
+    await chooseNewChatIn('Work');
+    const menu = await openFolderMenu('Work');
+    await typist.click(within(menu).getByRole('menuitem', { name: 'Delete' }));
+    await typist.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(note()).toBeNull());
+
+    await send('after the folder went');
+    await requestArrives(1);
+    server.replies[0].say('ok');
+    server.replies[0].finish();
+    await screen.findByText('ok');
+    await waitFor(() => expect(savedChats()).toHaveLength(1));
+    expect(savedChats()[0].folderId ?? null).toBeNull();
+  });
+
+  it('is switched off while a reply is being written, like the New chat button', async () => {
+    seedFolders();
+    start();
+    await send('question');
+    await requestArrives(1);
+    const menu = await openFolderMenu('Work');
+    expect((within(menu).getByRole('menuitem', { name: 'New chat in folder' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('asks before leaving an incognito chat that has messages, and only then opens the folder chat', async () => {
+    seedFolders();
+    start();
+    await typist.click(button('Incognito chat'));
+    await send('secret');
+    await requestArrives(1);
+    server.replies[0].say('shh');
+    server.replies[0].finish();
+    await screen.findByText('shh');
+
+    await chooseNewChatIn('Work');
+    const dialog = await screen.findByRole('alertdialog');
+    expect(note()).toBeNull(); // nothing has changed yet
+    await typist.click(within(dialog).getByRole('button', { name: 'Discard chat' }));
+    await waitFor(() => expect(note()).toBe('This chat will be saved in “Work”.'));
+    expect(document.documentElement.hasAttribute('data-incognito')).toBe(false);
+  });
+});

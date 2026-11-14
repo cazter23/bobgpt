@@ -29,6 +29,7 @@ type Props = {
   onRenameFolder: (id: string, name: string) => void;
   onToggleFolder: (id: string) => void;
   onDeleteFolder: (id: string) => void;
+  onNewChatInFolder: (id: string) => void; // an empty new chat that will be saved in this folder
   onMoveChat: (chatId: string, folderId: string | null) => void;
   onOpenPreferences: () => void;
   focusSearch: number; // goes up when Ctrl+K is pressed
@@ -187,6 +188,8 @@ export default function Sidebar(props: Props) {
                   onToggle={() => props.onToggleFolder(folder.id)}
                   onRename={(name) => props.onRenameFolder(folder.id, name)}
                   onDelete={() => props.onDeleteFolder(folder.id)}
+                  onNewChat={() => props.onNewChatInFolder(folder.id)}
+                  newChatDisabled={locked}
                 />
                 {!folder.collapsed && (
                   <ul className="folder-chats">{chats.filter((c) => c.folderId === folder.id).map(chatRow)}</ul>
@@ -258,20 +261,23 @@ function useRename(current: string, onSave: (value: string) => void, label: stri
 }
 
 /**
- * A row's ⋯ menu: Rename, Export as Markdown (chats only) and Delete. Delete first asks in a panel in the
- * middle of the window. `disabled` (while a reply is written) turns off Rename and Delete.
+ * A row's ⋯ menu: New chat in folder (folders only), Rename, Export as Markdown (chats only) and Delete. Delete first
+ * asks in a panel in the middle of the window. `disabled` (while a reply is written) turns off Rename and Delete.
  */
 function RowActions(props: {
   name: string; // the chat's or folder's name
   kind: 'chat' | 'folder';
   onRename: () => void;
   onExport?: () => void;
+  onNewChat?: () => void; // folders: start a new chat inside it
+  newChatDisabled?: boolean; // while a reply is being written, as the New chat button is
   onDelete: () => void;
   disabled?: boolean;
 }) {
   const [confirming, setConfirming] = useState(false);
 
   const items: MenuItem[] = [
+    ...(props.onNewChat ? [{ label: 'New chat in folder', icon: <PlusIcon />, onSelect: props.onNewChat, disabled: props.newChatDisabled }] : []),
     { label: 'Rename', icon: <EditIcon />, onSelect: props.onRename, disabled: props.disabled },
     ...(props.onExport ? [{ label: 'Export as Markdown', icon: <DownloadIcon />, onSelect: props.onExport }] : []),
     // returnFocus: back to ⋯, so that's where the focus goes again if the panel is cancelled
@@ -354,9 +360,11 @@ type FolderHeaderProps = {
   onToggle: () => void;
   onRename: (name: string) => void;
   onDelete: () => void;
+  onNewChat: () => void;
+  newChatDisabled: boolean;
 };
 
-function FolderHeader({ folder, startRenaming, onToggle, onRename, onDelete }: FolderHeaderProps) {
+function FolderHeader({ folder, startRenaming, onToggle, onRename, onDelete, onNewChat, newChatDisabled }: FolderHeaderProps) {
   const rename = useRename(folder.name, onRename, 'Folder name', startRenaming);
 
   return (
@@ -373,7 +381,7 @@ function FolderHeader({ folder, startRenaming, onToggle, onRename, onDelete }: F
         </button>
       )}
       {!rename.renaming && (
-        <RowActions name={folder.name} kind="folder" onRename={rename.start} onDelete={onDelete} />
+        <RowActions name={folder.name} kind="folder" onRename={rename.start} onDelete={onDelete} onNewChat={onNewChat} newChatDisabled={newChatDisabled} />
       )}
     </div>
   );
