@@ -370,7 +370,7 @@ body {
   background: transparent; color: var(--muted); cursor: pointer;
 }
 .chat-row:hover .row-more, .chat-row:focus-within .row-more, .chat-row.active .row-more,
-.folder-header:hover .row-more, .folder-header:focus-within .row-more, .row-more[aria-expanded="true"] { display: flex; }
+.folder-header:hover .row-more, .folder-header:focus-within .row-more, .row-more[aria-expanded="true"], .row-more.shown { display: flex; }
 .row-more:hover, .row-more[aria-expanded="true"] { background: var(--border); color: var(--text); }
 /* The row stays highlighted while its menu is open */
 .chat-row:not(.active):has(> .row-more[aria-expanded="true"]), .folder-header:has(> .row-more[aria-expanded="true"]) { background: var(--subtle); }
@@ -395,12 +395,6 @@ body {
 .row-menu-item:disabled { opacity: 0.45; cursor: default; }
 .row-menu-item.danger, .row-menu-item.danger svg { color: var(--danger); }
 .row-menu-sep { height: 1px; margin: 4px 6px; background: var(--border); }
-.confirm-delete {
-  flex: none; margin-right: 6px; padding: 4px 10px;
-  font: inherit; font-size: 13px; color: var(--danger);
-  background: transparent; border: 1px solid var(--danger); border-radius: 8px;
-  cursor: pointer;
-}
 
 /* Folders */
 .sidebar-top { display: flex; gap: 6px; }
@@ -743,7 +737,6 @@ body::before {
 .rename-input { font-size: 15px; padding: 6px 9px; }
 .row-more { width: 32px; height: 32px; }
 .row-more svg { width: 18px; height: 18px; }
-.confirm-delete { font-size: 14px; padding: 6px 12px; }
 .actions button { width: 34px; height: 34px; border-radius: 8px; }
 .actions button svg { width: 18px; height: 18px; }
 .eject-button { width: 34px; height: 34px; }
@@ -797,7 +790,7 @@ body::before {
 @property --surface { syntax: "<color>"; inherits: true; initial-value: transparent; }
 :root { transition: --text 0.5s ease, --muted 0.5s ease, --border 0.5s ease, --subtle 0.5s ease, --code-bg 0.5s ease, --bg 0.5s ease, --glass 0.5s ease, --accent-1 0.5s ease, --accent-2 0.5s ease, --active-bg 0.5s ease, --panel 0.5s ease, --surface 0.5s ease; }
 
-/* "Leave incognito chat?" dialog */
+/* Confirmation panel in the middle of the window (ConfirmDialog.tsx): deleting a chat or folder, leaving incognito */
 .confirm-backdrop { animation: fade 0.15s ease-out; }
 .confirm-card {
   align-items: center; gap: 8px; padding: 24px 24px 20px; text-align: center;
@@ -809,6 +802,8 @@ body::before {
   border-radius: 50%; background: var(--active-bg); color: var(--accent-1);
 }
 .confirm-icon svg { width: 22px; height: 22px; }
+.confirm-icon.danger { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+.confirm-name { color: var(--text); font-weight: 600; overflow-wrap: anywhere; } /* the chat or folder being deleted */
 .confirm-card h2 { margin: 0; font-size: 17px; font-weight: 600; }
 .confirm-card p { color: var(--muted); }
 .confirm-actions { display: flex; gap: 10px; width: 100%; margin-top: 12px; }

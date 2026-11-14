@@ -13,10 +13,14 @@ export type MenuItem = {
   onSelect: () => void;
   disabled?: boolean;
   danger?: boolean; // drawn in red, after a dividing line
+  returnFocus?: boolean; // after choosing it, the focus goes back to ⋯ (otherwise what the choice opens takes it)
 };
 
-/** `label` names the row for screen readers, e.g. 'Options for "Trip to Lisbon"'. */
-export default function RowMenu({ items, label }: { items: MenuItem[]; label: string }) {
+/**
+ * `label` names the row for screen readers, e.g. 'Options for "Trip to Lisbon"'. `keepShown` keeps ⋯ visible
+ * even when the row isn't hovered, e.g. while a panel it opened is up, so the focus can come back to it.
+ */
+export default function RowMenu({ items, label, keepShown }: { items: MenuItem[]; label: string; keepShown?: boolean }) {
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null); // null = closed
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -83,7 +87,7 @@ export default function RowMenu({ items, label }: { items: MenuItem[]; label: st
     <>
       <button
         ref={buttonRef}
-        className="row-more"
+        className={`row-more${keepShown ? ' shown' : ''}`}
         aria-label={label}
         title="Options"
         aria-haspopup="menu"
@@ -103,7 +107,7 @@ export default function RowMenu({ items, label }: { items: MenuItem[]; label: st
                   className={`row-menu-item${item.danger ? ' danger' : ''}`}
                   disabled={item.disabled}
                   onClick={() => {
-                    close(false); // not back to ⋯: Rename's text box and Delete's "Delete?" take the focus
+                    close(!!item.returnFocus); // Rename's text box takes the focus itself
                     item.onSelect();
                   }}
                 >

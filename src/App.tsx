@@ -28,6 +28,7 @@ import {
   StopIcon,
 } from './icons';
 import Sidebar from './Sidebar';
+import ConfirmDialog from './ConfirmDialog';
 import {
   CHATS_KEY,
   FOLDERS_KEY,
@@ -1321,30 +1322,16 @@ export default function App() {
       )}
 
       {leaveAction && (
-        <div className="confirm-backdrop" onMouseDown={() => setLeaveAction(null)}>
-          <div
-            className="confirm-card"
-            role="alertdialog"
-            aria-labelledby="leave-title"
-            aria-describedby="leave-text"
-            onMouseDown={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.key === 'Escape' && setLeaveAction(null)}
-          >
-            <div className="confirm-icon">
-              <GhostIcon />
-            </div>
-            <h2 id="leave-title">Leave incognito chat?</h2>
-            <p id="leave-text">Nothing in it was saved, so it will be gone for good.</p>
-            <div className="confirm-actions">
-              <button className="secondary-button" onClick={() => setLeaveAction(null)} autoFocus>
-                Stay
-              </button>
-              <button className="danger-button" onClick={leaveAction}>
-                Discard chat
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          icon={<GhostIcon />}
+          title="Leave incognito chat?"
+          cancelLabel="Stay"
+          confirmLabel="Discard chat"
+          onCancel={() => setLeaveAction(null)}
+          onConfirm={leaveAction}
+        >
+          Nothing in it was saved, so it will be gone for good.
+        </ConfirmDialog>
       )}
     </div>
   );

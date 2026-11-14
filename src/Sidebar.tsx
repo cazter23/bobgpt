@@ -4,6 +4,7 @@ import { downloadChatMarkdown } from './export';
 import { ChevronIcon, CloseIcon, DownloadIcon, EditIcon, FolderIcon, FolderPlusIcon, PlusIcon, SearchIcon, SlidersIcon, TrashIcon } from './icons';
 import { searchChats, searchTerms, splitMatches } from './search';
 import RowMenu, { type MenuItem } from './RowMenu';
+import ConfirmDialog from './ConfirmDialog';
 
 const WIDTHS: Record<SidebarSize, number> = { hidden: 0, medium: 240, large: 320 };
 
@@ -247,41 +248,54 @@ function useRename(current: string, onSave: (value: string) => void, label: stri
 }
 
 /**
- * A row's ⋯ menu: Rename, Export as Markdown (chats only) and Delete. Delete then asks "Delete?" in the row;
- * clicking elsewhere cancels. `disabled` (while a reply is written) turns off Rename and Delete.
+ * A row's ⋯ menu: Rename, Export as Markdown (chats only) and Delete. Delete first asks in a panel in the
+ * middle of the window. `disabled` (while a reply is written) turns off Rename and Delete.
  */
 function RowActions(props: {
-  name: string; // the chat's or folder's name, for screen readers
+  name: string; // the chat's or folder's name
   kind: 'chat' | 'folder';
   onRename: () => void;
   onExport?: () => void;
   onDelete: () => void;
   disabled?: boolean;
-  confirmHint?: string;
 }) {
   const [confirming, setConfirming] = useState(false);
-
-  if (confirming) {
-    return (
-      <button
-        className="confirm-delete"
-        title={props.confirmHint}
-        onClick={props.onDelete}
-        onBlur={() => setConfirming(false)}
-        onKeyDown={(e) => e.key === 'Escape' && setConfirming(false)}
-        autoFocus
-      >
-        Delete?
-      </button>
-    );
-  }
 
   const items: MenuItem[] = [
     { label: 'Rename', icon: <EditIcon />, onSelect: props.onRename, disabled: props.disabled },
     ...(props.onExport ? [{ label: 'Export as Markdown', icon: <DownloadIcon />, onSelect: props.onExport }] : []),
-    { label: 'Delete', icon: <TrashIcon />, onSelect: () => setConfirming(true), disabled: props.disabled, danger: true },
+    // returnFocus: back to ⋯, so that's where the focus goes again if the panel is cancelled
+    { label: 'Delete', icon: <TrashIcon />, onSelect: () => setConfirming(true), disabled: props.disabled, danger: true, returnFocus: true },
   ];
-  return <RowMenu items={items} label={`Options for ${props.kind} "${props.name}"`} />;
+
+  return (
+    <>
+      <RowMenu items={items} label={`Options for ${props.kind} "${props.name}"`} keepShown={confirming} />
+      {confirming && (
+        <ConfirmDialog
+          icon={<TrashIcon />}
+          danger
+          title={props.kind === 'chat' ? 'Delete chat?' : 'Delete folder?'}
+          confirmLabel="Delete"
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => {
+            setConfirming(false);
+            props.onDelete();
+          }}
+        >
+          {props.kind === 'chat' ? (
+            <>
+              <span className="confirm-name">{props.name}</span> will be deleted for good. This can't be undone.
+            </>
+          ) : (
+            <>
+              <span className="confirm-name">{props.name}</span> will be deleted. The chats inside go back to the main list.
+            </>
+          )}
+        </ConfirmDialog>
+      )}
+    </>
+  );
 }
 
 type RowProps = {
@@ -349,7 +363,7 @@ function FolderHeader({ folder, startRenaming, onToggle, onRename, onDelete }: F
         </button>
       )}
       {!rename.renaming && (
-        <RowActions name={folder.name} kind="folder" onRename={rename.start} onDelete={onDelete} confirmHint="The chats inside go back to the main list" />
+        <RowActions name={folder.name} kind="folder" onRename={rename.start} onDelete={onDelete} />
       )}
     </div>
   );
