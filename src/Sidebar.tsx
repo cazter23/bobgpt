@@ -1,6 +1,7 @@
-import { useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent } from 'react';
 import type { Chat, Folder, SidebarSize } from './storage';
-import { ChevronIcon, EditIcon, FolderIcon, FolderPlusIcon, PlusIcon, SlidersIcon, TrashIcon } from './icons';
+import { ChevronIcon, CloseIcon, EditIcon, FolderIcon, FolderPlusIcon, PlusIcon, SearchIcon, SlidersIcon, TrashIcon } from './icons';
+import { searchChats, searchTerms, splitMatches } from './search';
 
 const WIDTHS: Record<SidebarSize, number> = { hidden: 0, medium: 240, large: 320 };
 
@@ -18,7 +19,7 @@ type Props = {
   size: SidebarSize;
   onSize: (size: SidebarSize) => void;
   onNew: () => void;
-  onOpen: (id: string) => void;
+  onOpen: (id: string, query?: string) => void; // query: the search that found it, so the chat can scroll to the match
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   onNewFolder: () => string; // returns the new folder's id
@@ -27,6 +28,7 @@ type Props = {
   onDeleteFolder: (id: string) => void;
   onMoveChat: (chatId: string, folderId: string | null) => void;
   onOpenPreferences: () => void;
+  focusSearch: number; // goes up when Ctrl+K is pressed
 };
 
 export default function Sidebar(props: Props) {
@@ -36,6 +38,15 @@ export default function Sidebar(props: Props) {
   const [dropOver, setDropOver] = useState<string | null>(null); // 'root' or a folder id, for highlighting
   const [newFolderId, setNewFolderId] = useState<string | null>(null); // opens straight into renaming
   const dragging = dragWidth !== null;
+  const [query, setQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  const searching = searchTerms(query).length > 0;
+
+  useEffect(() => {
+    if (!props.focusSearch) return;
+    searchRef.current?.focus();
+    searchRef.current?.select();
+  }, [props.focusSearch]);
 
   // Drag the edge: the panel follows the pointer, then snaps to hidden, medium or large on release.
   function onPointerDown(e: PointerEvent<HTMLDivElement>) {
@@ -125,6 +136,33 @@ export default function Sidebar(props: Props) {
             </button>
           </div>
 
+          <div className="search">
+            <SearchIcon />
+            <input
+              ref={searchRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Escape' && setQuery('')}
+              placeholder="Search chats"
+              aria-label="Search chats"
+            />
+            {query && (
+              <button className="search-clear" aria-label="Clear search" title="Clear search" onClick={() => setQuery('')}>
+                <CloseIcon />
+              </button>
+            )}
+          </div>
+
+          {searching ? (
+            <SearchResults
+              hits={searchChats(chats, query)}
+              folders={folders}
+              query={query}
+              activeId={activeId}
+              locked={locked}
+              onOpen={(id) => props.onOpen(id, query)}
+            />
+          ) : (
           <ul
             className={`chat-list${locked ? ' locked' : ''}${dropOver === 'root' ? ' drop-over' : ''}`}
             {...dropTarget(null)}
@@ -145,6 +183,7 @@ export default function Sidebar(props: Props) {
             ))}
             {unfiled.map(chatRow)}
           </ul>
+          )}
 
           <div className="sidebar-footer">
             <button className="topbar-button" aria-label="Preferences" title="Preferences" onClick={props.onOpenPreferences}>
@@ -300,5 +339,42 @@ function FolderHeader({ folder, startRenaming, onToggle, onRename, onDelete }: F
         <RowActions onRename={rename.start} onDelete={onDelete} confirmHint="The chats inside go back to the main list" />
       )}
     </div>
+  );
+}
+
+/** What the sidebar shows while you're searching: matching chats with a snippet of the match. */
+function SearchResults(props: {
+  hits: ReturnType<typeof searchChats>;
+  folders: Folder[];
+  query: string;
+  activeId: string | null;
+  locked: boolean;
+  onOpen: (id: string) => void;
+}) {
+  const terms = searchTerms(props.query);
+  const marked = (text: string) =>
+    splitMatches(text, terms).map((part, i) => (part.match ? <mark key={i}>{part.text}</mark> : <span key={i}>{part.text}</span>));
+
+  if (props.hits.length === 0) return <p className="search-empty">No chats match.</p>;
+
+  return (
+    <ul className={`chat-list search-results${props.locked ? ' locked' : ''}`}>
+      {props.hits.map(({ chat, snippet }) => {
+        const folder = props.folders.find((f) => f.id === chat.folderId);
+        return (
+          <li key={chat.id}>
+            <button
+              className={`search-result${chat.id === props.activeId ? ' active' : ''}`}
+              onClick={() => props.onOpen(chat.id)}
+              disabled={props.locked}
+            >
+              <span className="search-title">{marked(chat.title)}</span>
+              {snippet && <span className="search-snippet">{marked(snippet)}</span>}
+              {folder && <span className="search-folder">{folder.name}</span>}
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

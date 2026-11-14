@@ -825,3 +825,35 @@ body::before {
 .queue.paused .queue-item { opacity: 0.6; }
 .queue-more { width: 100%; border: none; background: transparent; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
 .queue-more:hover { color: var(--text); background: var(--subtle); }
+
+/* Search chats (sidebar) */
+.search {
+  display: flex; align-items: center; gap: 8px; padding: 0 8px; height: 36px;
+  border: 1px solid var(--border); border-radius: 8px; color: var(--muted);
+}
+.search:focus-within { border-color: var(--accent-1); }
+.search svg { flex: none; width: 15px; height: 15px; }
+.search input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: var(--text); font: inherit; font-size: 14px; }
+.search-clear {
+  display: flex; align-items: center; justify-content: center; flex: none; width: 22px; height: 22px; padding: 0;
+  border: none; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer;
+}
+.search-clear:hover { background: var(--subtle); color: var(--text); }
+.search-clear svg { width: 13px; height: 13px; }
+.search-empty { margin: 8px 10px; color: var(--muted); font-size: 13px; }
+.search-result {
+  display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 8px 10px;
+  border: none; border-radius: 8px; background: transparent; color: var(--text);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.search-result:hover:not(:disabled), .search-result.active { background: var(--subtle); }
+.search-result:disabled { opacity: 0.5; cursor: default; }
+.search-title { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-snippet {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  color: var(--muted); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere;
+}
+.search-folder { color: var(--muted); font-size: 11px; opacity: 0.8; }
+.search-result mark { background: var(--active-bg); color: var(--accent-1); font-weight: 600; border-radius: 2px; }
+.msg.flash { border-radius: 8px; animation: flash 1.8s ease-out; }
+@keyframes flash { 0%, 35% { box-shadow: 0 0 0 8px var(--active-bg); background: var(--active-bg); } 100% { box-shadow: 0 0 0 8px transparent; background: transparent; } }

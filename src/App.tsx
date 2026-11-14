@@ -10,6 +10,7 @@ import { ContextError, conversationTokens, fitToContext, tidyForModel } from './
 import Markdown from './Markdown';
 import { splitThinking } from './thinking';
 import { downloadBackup, readBackup } from './backup';
+import { firstMatchIndex, searchTerms } from './search';
 import { applyAppearance, applyFonts, followSystemTheme } from './theme';
 import {
   CloseIcon,
@@ -123,6 +124,8 @@ export default function App() {
   const [incognito, setIncognito] = useState(false); // this chat is never saved
   const [leaveAction, setLeaveAction] = useState<(() => void) | null>(null); // waiting for "discard this incognito chat?"
   const [queue, setQueue] = useState<{ id: string; text: string }[]>([]); // messages waiting to be sent, one at a time, each after the previous reply
+  const [searchFocus, setSearchFocus] = useState(0); // goes up on Ctrl+K, to focus the sidebar's search field
+  const [jump, setJump] = useState<{ chatId: string; query: string } | null>(null); // scroll to a search match once the chat is open
   const [queueExpanded, setQueueExpanded] = useState(false); // show every queued message, not just the first few
   const [leavingItem, setLeavingItem] = useState<{ id: string; text: string; index: number } | null>(null); // a removed row, shrinking away
   const [queuePaused, setQueuePaused] = useState(false); // after Stop or an error, the queue waits for you
@@ -407,6 +410,32 @@ export default function App() {
     if (!(await replyTo([...messages, { role: 'user', content: text }]))) setInput(text);
   }
 
+  // Ctrl+K: jump to the search field (opening the sidebar first if it's hidden).
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        if (sidebarSize === 'hidden') setSidebarSize('medium');
+        setSearchFocus((n) => n + 1);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sidebarSize]);
+
+  // After opening a chat from a search result, scroll to the first matching message and flash it.
+  useEffect(() => {
+    if (!jump || activeId !== jump.chatId || messages.length === 0) return;
+    setJump(null);
+    const index = firstMatchIndex(messages, searchTerms(jump.query));
+    const el = index >= 0 ? scrollRef.current?.querySelector<HTMLElement>(`[data-msg-index="${index}"]`) : null;
+    if (!el) return;
+    stickToBottom.current = false;
+    el.scrollIntoView({ block: 'center' });
+    el.classList.add('flash');
+    setTimeout(() => el.classList.remove('flash'), 1800);
+  }, [jump, activeId, messages]);
+
   // The model writes a chat's name only once it has nothing queued to answer, so it never holds up your messages.
   useEffect(() => {
     const p = pendingName.current;
@@ -551,14 +580,14 @@ export default function App() {
   }
 
   /** Shows chat `id` (or an empty new chat when null). */
-  function showChat(id: string | null) {
+  function showChat(id: string | null, query?: string) {
     if (busy.current) return;
     // Leaving an incognito chat that has messages throws it away, so ask first.
     if (incognito && messages.length > 0) {
-      setLeaveAction(() => () => openChat(id));
+      setLeaveAction(() => () => openChat(id, query));
       return;
     }
-    openChat(id);
+    openChat(id, query);
   }
 
   /** Starts a new incognito chat, or leaves incognito if you're already in one. */
@@ -574,7 +603,8 @@ export default function App() {
     }
   }
 
-  function openChat(id: string | null) {
+  function openChat(id: string | null, query?: string) {
+    setJump(id && query ? { chatId: id, query } : null);
     setQueue([]);
     setQueuePaused(false);
     setIncognito(false);
@@ -814,6 +844,7 @@ export default function App() {
           onDeleteFolder={deleteFolder}
           onMoveChat={moveChat}
           onOpenPreferences={openPreferences}
+          focusSearch={searchFocus}
         />
         <div className="pane">
           {messages.length === 0 ? (
@@ -883,7 +914,7 @@ export default function App() {
 
                     if (m.role === 'user') {
                       return (
-                        <div key={i} className="msg user">
+                        <div key={i} className="msg user" data-msg-index={i}>
                           <div className="bubble">{m.content}</div>
                           {actions}
                         </div>
@@ -891,7 +922,7 @@ export default function App() {
                     }
 
                     return (
-                      <div key={i} className={`msg assistant${generating && i === messages.length - 1 ? ' streaming' : ''}`}>
+                      <div key={i} className={`msg assistant${generating && i === messages.length - 1 ? ' streaming' : ''}`} data-msg-index={i}>
                         {m.trimmed && <p className="trim-note">Earlier messages were left out to fit the context.</p>}
                         {m.thinking && settings.thinking !== 'hidden' && (
                           <details className="thinking" key={settings.thinking} open={settings.thinking === 'open'}>
