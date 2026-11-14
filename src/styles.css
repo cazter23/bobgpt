@@ -432,9 +432,23 @@ body {
 .inputbox .icon-button, .edit-buttons .icon-button { color: #fff; border: none; background: var(--button); }
 .inputbox .icon-button:hover, .edit-buttons .icon-button:hover { background: var(--button); filter: brightness(1.12); }
 
+/* Reduced motion (Windows: Settings > Accessibility > Visual effects > Animation effects): nothing slides, fades or bounces.
+   Three things are feedback rather than decoration, so they stay, without the movement. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
+  /* The small loading spinner keeps turning, so it's clear a model is loading. */
+  .spinner { animation: spin 0.9s linear infinite !important; }
+  /* "Waiting for the first word": the three dots fade in turn instead of bouncing, so it doesn't look frozen. */
+  .streaming .content:empty,
+  .streaming .content:empty::before,
+  .streaming .content:empty::after { animation: dot-fade 1.2s ease-in-out infinite !important; }
+  .streaming .content:empty::before { animation-delay: 0s !important; }
+  .streaming .content:empty { animation-delay: 0.2s !important; }
+  .streaming .content:empty::after { animation-delay: 0.4s !important; }
+  /* A search match is marked with a steady highlight (the app removes it after a couple of seconds) instead of a fade. */
+  .msg.flash { box-shadow: 0 0 0 8px var(--active-bg); background: var(--active-bg); }
 }
+@keyframes dot-fade { 0%, 70%, 100% { opacity: 0.25; } 35% { opacity: 1; } }
 
 
 .topbar-right { display: flex; align-items: center; gap: 10px; }
