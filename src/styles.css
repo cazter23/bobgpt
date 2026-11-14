@@ -174,6 +174,7 @@ body {
 
 /* Edit / regenerate: shown when hovering a message */
 .actions { display: flex; gap: 2px; margin-top: 4px; opacity: 0; transition: opacity 0.15s; }
+.msg.show-actions .actions { opacity: 1; } /* Alt+C: so the tick on Copy can be seen */
 .msg:hover .actions, .actions:focus-within { opacity: 1; }
 .actions.hidden { visibility: hidden; }
 .actions button {

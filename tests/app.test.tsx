@@ -413,3 +413,126 @@ describe('two tabs open at once', () => {
     expect(await screen.findByText('From the other tab')).toBeTruthy();
   });
 });
+
+describe('keyboard shortcuts', () => {
+  const press = (init: KeyboardEventInit, target: Element = document.body) => fireEvent.keyDown(target, init);
+  const alt = (code: string) => press({ code, key: code.replace('Key', '').toLowerCase(), altKey: true });
+  const greeting = () => document.querySelector('.greeting');
+  const messageBox = () => document.querySelector<HTMLTextAreaElement>('.inputbox textarea')!;
+
+  const alpha = chat('Alpha', [userMsg('q1'), bot('reply alpha')], { id: 'a', updatedAt: 3 });
+  const beta = chat('Beta', [userMsg('q2'), bot('reply beta')], { id: 'b', updatedAt: 2 });
+  const gamma = chat('Gamma', [userMsg('q3'), bot('reply gamma')], { id: 'g', updatedAt: 1 });
+
+  it('Alt+N starts a new chat', async () => {
+    start({ chats: [alpha] });
+    await typist.click(await screen.findByText('Alpha'));
+    expect(await screen.findByText('reply alpha')).toBeTruthy();
+    alt('KeyN');
+    await waitFor(() => expect(greeting()).not.toBeNull());
+    expect(screen.queryByText('reply alpha')).toBeNull();
+  });
+
+  it('Alt+I starts an incognito chat, and Alt+I again leaves it', async () => {
+    start();
+    alt('KeyI');
+    await waitFor(() => expect(document.documentElement.hasAttribute('data-incognito')).toBe(true));
+    alt('KeyI');
+    await waitFor(() => expect(document.documentElement.hasAttribute('data-incognito')).toBe(false));
+  });
+
+  it('Alt+I still asks before throwing away an incognito chat that has messages in it', async () => {
+    start();
+    alt('KeyI');
+    await send('a secret');
+    await requestArrives(1);
+    server.replies[0].say('ok');
+    server.replies[0].finish();
+    await screen.findByText('ok');
+    alt('KeyI');
+    expect(await screen.findByRole('alertdialog')).toBeTruthy();
+    expect(screen.getByText('ok')).toBeTruthy(); // nothing discarded yet
+  });
+
+  it('Alt+Down and Alt+Up step through the chats in the sidebar order, and stop at the ends', async () => {
+    start({ chats: [alpha, beta, gamma] });
+    await screen.findByText('Alpha');
+    alt('ArrowDown'); // from a new chat: the first
+    expect(await screen.findByText('reply alpha')).toBeTruthy();
+    alt('ArrowDown');
+    expect(await screen.findByText('reply beta')).toBeTruthy();
+    alt('ArrowDown');
+    expect(await screen.findByText('reply gamma')).toBeTruthy();
+    alt('ArrowDown'); // the last one: stays
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByText('reply gamma')).toBeTruthy();
+    alt('ArrowUp');
+    expect(await screen.findByText('reply beta')).toBeTruthy();
+  });
+
+  it('"/" jumps to the message box, but is just a slash while you are typing in another field', async () => {
+    start({ chats: [alpha] });
+    await screen.findByText('Alpha');
+    (document.activeElement as HTMLElement | null)?.blur();
+    press({ key: '/', code: 'Slash' });
+    await waitFor(() => expect(document.activeElement).toBe(messageBox()));
+
+    const search = screen.getByRole('textbox', { name: 'Search chats' });
+    search.focus();
+    const slash = new KeyboardEvent('keydown', { key: '/', code: 'Slash', bubbles: true, cancelable: true });
+    search.dispatchEvent(slash);
+    expect(slash.defaultPrevented).toBe(false); // left alone, so the slash is typed
+    expect(document.activeElement).toBe(search);
+  });
+
+  it('Alt+C copies the newest reply and keeps its buttons showing for a moment', async () => {
+    start({ chats: [alpha] });
+    // After start(): the test library's own userEvent.setup() installs a clipboard of its own, which this replaces.
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    await typist.click(await screen.findByText('Alpha'));
+    await screen.findByText('reply alpha');
+    alt('KeyC');
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('reply alpha'));
+    expect(document.querySelector('.msg.assistant')!.classList.contains('show-actions')).toBe(true);
+  });
+
+  it('does nothing with other modifiers (Shift, Ctrl, or AltGr, which sends Ctrl too)', async () => {
+    start({ chats: [alpha] });
+    await typist.click(await screen.findByText('Alpha'));
+    await screen.findByText('reply alpha');
+    press({ code: 'KeyN', key: 'N', altKey: true, shiftKey: true });
+    press({ code: 'KeyN', key: 'n', altKey: true, ctrlKey: true });
+    press({ code: 'KeyN', key: 'n' });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByText('reply alpha')).toBeTruthy();
+  });
+
+  it('is ignored while Preferences is open', async () => {
+    start({ chats: [alpha] });
+    await typist.click(await screen.findByText('Alpha'));
+    await screen.findByText('reply alpha');
+    await typist.click(button('Preferences'));
+    await screen.findByText('Line spacing');
+    alt('KeyN');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByText('reply alpha')).toBeTruthy();
+  });
+
+  it('is ignored while a reply is being written (the buttons are off then too), but "/" still works', async () => {
+    start({ chats: [alpha] });
+    await typist.click(await screen.findByText('Alpha'));
+    await screen.findByText('reply alpha');
+    await send('another question');
+    await requestArrives(1);
+
+    alt('KeyN');
+    alt('ArrowDown');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByText('another question')).toBeTruthy(); // still in this chat
+
+    (document.activeElement as HTMLElement | null)?.blur();
+    press({ key: '/', code: 'Slash' });
+    await waitFor(() => expect(document.activeElement).toBe(messageBox())); // so you can queue another message
+  });
+});

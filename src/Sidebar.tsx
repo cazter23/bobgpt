@@ -128,7 +128,7 @@ export default function Sidebar(props: Props) {
       >
         <div className="sidebar-inner">
           <div className="sidebar-top">
-            <button className="new-chat" onClick={props.onNew} disabled={locked}>
+            <button className="new-chat" onClick={props.onNew} disabled={locked} title="New chat (Alt+N)">
               <PlusIcon /> New chat
             </button>
             <button
@@ -156,6 +156,7 @@ export default function Sidebar(props: Props) {
               }}
               placeholder="Search chats"
               aria-label="Search chats"
+              title="Search chats (Ctrl+K)"
             />
             {query && (
               <button className="search-clear" aria-label="Clear search" title="Clear search" onClick={() => setQuery('')}>

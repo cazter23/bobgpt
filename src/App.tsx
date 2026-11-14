@@ -13,6 +13,7 @@ import MessageRow, { type RowAction } from './MessageRow';
 import { splitThinking } from './thinking';
 import { downloadBackup, readBackup } from './backup';
 import { firstMatchIndex, searchTerms } from './search';
+import { chatsInSidebarOrder } from './order';
 import { applyAppearance, applyFonts, followSystemTheme } from './theme';
 import {
   AlertIcon,
@@ -977,6 +978,71 @@ export default function App() {
   const activeTitle = incognito ? null : chats.find((c) => c.id === activeId)?.title; // shown in the top bar
   const firstUser = messages.findIndex((m) => m.role === 'user'); // replies before it have nothing to regenerate
 
+  /** Alt+Up / Alt+Down: the chat above or below the open one in the sidebar. From a new chat, Down opens the first. */
+  function stepChat(direction: -1 | 1) {
+    const order = chatsInSidebarOrder(chats, folders);
+    const at = order.findIndex((c) => c.id === activeId);
+    const next = at < 0 ? (direction === 1 ? 0 : -1) : at + direction;
+    if (next >= 0 && next < order.length) showChat(order[next].id);
+  }
+
+  /** Alt+C: presses the Copy button of the newest reply, and shows its buttons for a moment so the tick can be seen. */
+  function copyLastReply() {
+    const replies = scrollRef.current?.querySelectorAll<HTMLElement>('.msg.assistant');
+    const last = replies?.[replies.length - 1];
+    const copy = last?.querySelector<HTMLButtonElement>('.actions button[aria-label="Copy"]');
+    if (!last || !copy) return;
+    copy.click();
+    last.classList.add('show-actions');
+    setTimeout(() => last.classList.remove('show-actions'), 1500);
+  }
+
+  // Keyboard shortcuts (Ctrl+K and Esc are above). Alt+letter and Alt+arrows are used because browsers keep most
+  // Ctrl+Shift combinations for themselves. The listener never changes; it calls the current version of each action.
+  const shortcutActions = useRef({ blocked: false, idle: true, newChat: () => {}, incognito: () => {}, step: (_d: -1 | 1) => {}, copyLast: () => {}, focusInput: () => {} });
+  useLayoutEffect(() => {
+    shortcutActions.current = {
+      blocked: settingsOpen || prefsOpen || !!leaveAction, // a panel or a confirmation is open
+      idle: !generating, // while a reply is being written, the buttons these keys stand for are switched off too
+      newChat: () => showChat(null),
+      incognito: toggleIncognito,
+      step: stepChat,
+      copyLast: copyLastReply,
+      focusInput: () => inputRef.current?.focus(),
+    };
+  });
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.defaultPrevented || e.isComposing || e.repeat) return;
+      const now = shortcutActions.current;
+      if (now.blocked) return;
+
+      // "/" jumps to the message box, unless you're typing somewhere (then it's just a slash).
+      if (e.key === '/' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if ((e.target as HTMLElement | null)?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+        e.preventDefault();
+        now.focusInput();
+        return;
+      }
+
+      // Alt alone (not AltGr, which also sends Ctrl, and not with Shift or Windows' language switch).
+      if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const actions: Record<string, (() => void) | undefined> = {
+        KeyN: () => now.idle && now.newChat(),
+        KeyI: () => now.idle && now.incognito(),
+        KeyC: () => now.idle && now.copyLast(),
+        ArrowUp: () => now.idle && now.step(-1),
+        ArrowDown: () => now.idle && now.step(1),
+      };
+      const action = actions[e.code];
+      if (!action) return;
+      e.preventDefault();
+      action();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   // The message rows' buttons all go through one function that never changes, so that MessageRow's memo can
   // skip rows that haven't changed. It calls the current version of each handler.
   const rowHandlers = useRef({ regenerate, startEdit, deleteMessage });
@@ -1182,7 +1248,7 @@ export default function App() {
             className={`topbar-button${incognito ? ' on' : ''}`}
             aria-label="Incognito chat"
             aria-pressed={incognito}
-            title={incognito ? 'Leave incognito' : 'New incognito chat (not saved)'}
+            title={incognito ? 'Leave incognito (Alt+I)' : 'New incognito chat, not saved (Alt+I)'}
             onClick={toggleIncognito}
             disabled={generating}
           >
@@ -1191,7 +1257,7 @@ export default function App() {
           <button
             className="topbar-button"
             aria-label="New chat"
-            title="New chat"
+            title="New chat (Alt+N)"
             onClick={() => showChat(null)}
             disabled={generating}
           >
