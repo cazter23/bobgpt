@@ -25,6 +25,17 @@ Open http://localhost:5173 in Edge or Chrome.
 - `npm install` is only needed the first time, or after dependencies change.
 - Leave the terminal open while you use the app; press `Ctrl+C` in it to stop.
 
+## Tests
+
+```
+npm test
+```
+
+runs the automated tests in a couple of seconds. They never contact LM Studio or load a model: a pretend LM Studio is used instead. `npm run check` runs the type check, the tests and a build together; run it before committing.
+
+- `tests/*.test.ts` check the logic on its own: trimming a long chat, search, saved-data loading, settings, backups, Markdown export, stored images, LM Studio replies, themes and fonts.
+- `tests/app.test.tsx` runs the whole app against the pretend LM Studio (`tests/fakeLmStudio.ts`): the message queue sending one at a time, Stop and Resume, incognito chats never being saved, Stop at limit, Truncate middle, error messages, and search.
+
 ## Using it
 
 - **Enter** sends, **Shift+Enter** adds a new line.
