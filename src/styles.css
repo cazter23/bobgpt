@@ -705,11 +705,12 @@ body::before {
 .swatch.custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; padding: 0; border: 0; }
 .swatch.custom::after { content: "+"; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 16px; font-weight: 600; text-shadow: 0 0 3px rgba(0,0,0,0.5); pointer-events: none; }
 
-/* Font choices in Preferences: each name shown in its own font */
-.font-options { display: flex; flex-wrap: wrap; gap: 6px; }
-.font-options button {
-  padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px;
-  background: var(--subtle); color: var(--muted); font-size: 14px; cursor: pointer;
+/* Font choices in Preferences: a drop-down, each name shown in its own font */
+.font-select {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--subtle); color: var(--text); font-size: 14px; cursor: pointer;
 }
-.font-options button:hover { color: var(--text); }
-.font-options button[aria-pressed="true"] { background: var(--active-bg); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent-1); }
+.font-select:focus-visible { outline: none; border-color: var(--accent-1); }
+.font-select option { background: var(--select-bg); color: var(--text); }
+:root { --select-bg: #faf8ff; }
+:root[data-theme="dark"], :root[data-incognito] { --select-bg: #1e1a42; }

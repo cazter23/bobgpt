@@ -87,6 +87,7 @@ function variables(p: Palette, isDark: boolean): string {
     `--page: ${page};`,
     `--blobs: ${blobs};`,
     `--panel: ${isDark ? c(h1, 43, 19, 0.94) : c(h1, 100, 98, 0.94)};`, // Settings and Preferences
+    `--select-bg: ${isDark ? c(h1, 43, 19) : c(h1, 100, 98)};`, // drop-down lists
     `--accent-1: ${c(h1, 100, a1)};`,
     `--accent-2: ${c(h2, 100, a2)};`,
     `--accent-glow: ${glow};`,

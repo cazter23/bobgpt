@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import type { Colour, Settings } from './settings';
 import { swatchBackground } from './theme';
-import { CODE_FONTS, TEXT_FONTS, loadAllFonts } from './fonts';
+import { CODE_FONTS, TEXT_FONTS, loadAllFonts, type CodeFont, type TextFont } from './fonts';
 import { CloseIcon } from './icons';
 
 const SWATCHES: [Colour, string][] = [
@@ -129,24 +129,36 @@ export default function PreferencesPanel({ settings, onChange, onClose, chatCoun
 
           <div className="field">
             <span className="field-label">Text font</span>
-            <div className="font-options" role="group" aria-label="Text font">
+            <select
+              className="font-select"
+              aria-label="Text font"
+              value={settings.textFont}
+              style={{ fontFamily: TEXT_FONTS.find((f) => f.id === settings.textFont)?.stack }}
+              onChange={(e) => set({ textFont: e.target.value as TextFont })}
+            >
               {TEXT_FONTS.map((f) => (
-                <button key={f.id} style={{ fontFamily: f.stack }} aria-pressed={settings.textFont === f.id} onClick={() => set({ textFont: f.id })}>
+                <option key={f.id} value={f.id} style={{ fontFamily: f.stack }}>
                   {f.label}
-                </button>
+                </option>
               ))}
-            </div>
+            </select>
           </div>
 
           <div className="field">
             <span className="field-label">Code font</span>
-            <div className="font-options" role="group" aria-label="Code font">
+            <select
+              className="font-select"
+              aria-label="Code font"
+              value={settings.codeFont}
+              style={{ fontFamily: CODE_FONTS.find((f) => f.id === settings.codeFont)?.stack }}
+              onChange={(e) => set({ codeFont: e.target.value as CodeFont })}
+            >
               {CODE_FONTS.map((f) => (
-                <button key={f.id} style={{ fontFamily: f.stack }} aria-pressed={settings.codeFont === f.id} onClick={() => set({ codeFont: f.id })}>
+                <option key={f.id} value={f.id} style={{ fontFamily: f.stack }}>
                   {f.label}
-                </button>
+                </option>
               ))}
-            </div>
+            </select>
           </div>
 
           <div className="field">
