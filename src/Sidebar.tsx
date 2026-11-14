@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent } from 'react';
 import type { Chat, Folder, SidebarSize } from './storage';
 import { downloadChatMarkdown } from './export';
 import { ChevronIcon, CloseIcon, DownloadIcon, EditIcon, FolderIcon, FolderPlusIcon, PlusIcon, SearchIcon, SlidersIcon, TrashIcon } from './icons';
@@ -42,6 +42,8 @@ export default function Sidebar(props: Props) {
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   const searching = searchTerms(query).length > 0;
+  // Only searched again when the chats or the words change (not each time the page redraws, e.g. while a reply streams).
+  const hits = useMemo(() => (searching ? searchChats(chats, query) : []), [chats, query, searching]);
 
   useEffect(() => {
     if (!props.focusSearch) return;
@@ -156,7 +158,7 @@ export default function Sidebar(props: Props) {
 
           {searching ? (
             <SearchResults
-              hits={searchChats(chats, query)}
+              hits={hits}
               folders={folders}
               query={query}
               activeId={activeId}

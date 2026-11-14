@@ -9,7 +9,7 @@ import { SETTINGS_KEY, loadSettings, saveSettings, type ModelLoadSettings, type 
 import { ContextError, NoVisionError, conversationTokens, fitToContext, tidyForModel, withoutImages } from './trim';
 import { addImage, forgetImages, getImages, imageIdsIn, pruneImages, shrinkImage, storeImageData, storeImages } from './images';
 import { AttachmentThumb, MessageImages } from './ImageThumbs';
-import Markdown from './Markdown';
+import MessageRow, { type RowAction } from './MessageRow';
 import { splitThinking } from './thinking';
 import { downloadBackup, readBackup } from './backup';
 import { firstMatchIndex, searchTerms } from './search';
@@ -17,19 +17,15 @@ import { applyAppearance, applyFonts, followSystemTheme } from './theme';
 import {
   CloseIcon,
   ComposeIcon,
-  EditIcon,
   GearIcon,
   GhostIcon,
   PlusIcon,
-  RegenerateIcon,
   SendIcon,
   SidebarIcon,
   SlidersIcon,
   StopIcon,
-  TrashIcon,
 } from './icons';
 import Sidebar from './Sidebar';
-import CopyButton from './CopyButton';
 import {
   CHATS_KEY,
   FOLDERS_KEY,
@@ -915,6 +911,19 @@ export default function App() {
   const sendTitle = `Send (${settings.ctrlEnterToSend ? 'Ctrl+Enter' : 'Enter'})`;
   const firstUser = messages.findIndex((m) => m.role === 'user'); // replies before it have nothing to regenerate
 
+  // The message rows' buttons all go through one function that never changes, so that MessageRow's memo can
+  // skip rows that haven't changed. It calls the current version of each handler.
+  const rowHandlers = useRef({ regenerate, startEdit, deleteMessage });
+  useLayoutEffect(() => {
+    rowHandlers.current = { regenerate, startEdit, deleteMessage };
+  });
+  const onRowAction = useCallback((action: RowAction, index: number) => {
+    const handlers = rowHandlers.current;
+    if (action === 'regenerate') handlers.regenerate(index);
+    else if (action === 'edit') handlers.startEdit(index);
+    else handlers.deleteMessage(index);
+  }, []);
+
   const composer = (
     <>
       {(queue.length > 0 || leavingItem) && (
@@ -1153,28 +1162,6 @@ export default function App() {
               >
                 <div className="column">
                   {messages.map((m, i) => {
-                    const actions = (
-                      <div className={`actions${generating ? ' hidden' : ''}`}>
-                        {m.role === 'assistant' && <CopyButton text={m.content} />}
-                        {firstUser >= 0 && i >= firstUser && (
-                          <button aria-label="Regenerate" title="Regenerate" onClick={() => regenerate(i)}>
-                            <RegenerateIcon />
-                          </button>
-                        )}
-                        {m.role === 'user' && (
-                          <>
-                            <button aria-label="Edit" title="Edit" onClick={() => startEdit(i)}>
-                              <EditIcon />
-                            </button>
-                            <CopyButton text={m.content} />
-                          </>
-                        )}
-                        <button aria-label="Delete" title="Delete this message" onClick={() => deleteMessage(i)}>
-                          <TrashIcon />
-                        </button>
-                      </div>
-                    );
-
                     if (m.role === 'user' && i === editingIndex) {
                       return (
                         <div key={m.id} className="msg user editing">
@@ -1199,37 +1186,18 @@ export default function App() {
                       );
                     }
 
-                    if (m.role === 'user') {
-                      return (
-                        <div key={m.id} className="msg user" data-msg-index={i}>
-                          <div className="bubble">
-                            {m.images?.length ? <MessageImages ids={m.images} withText={!!m.content} /> : null}
-                            {m.content}
-                          </div>
-                          {actions}
-                        </div>
-                      );
-                    }
-
                     return (
-                      <div key={m.id} className={`msg assistant${generating && i === messages.length - 1 ? ' streaming' : ''}`} data-msg-index={i}>
-                        {m.trimmed && <p className="trim-note">Earlier messages were left out to fit the context.</p>}
-                        {m.thinking && settings.thinking !== 'hidden' && (
-                          <details className="thinking" key={settings.thinking} open={settings.thinking === 'open'}>
-                            <summary>
-                              {m.thoughtSeconds === undefined
-                                ? 'Thinking…'
-                                : `Thought for ${Math.max(1, Math.round(m.thoughtSeconds))}s`}
-                            </summary>
-                            <div className="thinking-text">{m.thinking}</div>
-                          </details>
-                        )}
-                        <div className="content">
-                          <Markdown text={m.content} />
-                        </div>
-                        {settings.showSpeed && m.tokensPerSecond && <p className="msg-meta">{m.tokensPerSecond} tok/s</p>}
-                        {actions}
-                      </div>
+                      <MessageRow
+                        key={m.id}
+                        message={m}
+                        index={i}
+                        generating={generating}
+                        streaming={generating && i === messages.length - 1}
+                        canRegenerate={firstUser >= 0 && i >= firstUser}
+                        thinkingView={settings.thinking}
+                        showSpeed={settings.showSpeed}
+                        onAction={onRowAction}
+                      />
                     );
                   })}
                   {error && <p className="error">{error}</p>}

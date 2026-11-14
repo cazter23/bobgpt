@@ -1,4 +1,4 @@
-import { isValidElement, useRef, type ComponentProps, type ReactNode } from 'react';
+import { isValidElement, memo, useRef, type ComponentProps, type ReactNode } from 'react';
 import CopyButton from './CopyButton';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -44,10 +44,14 @@ const components: Components = {
   ),
 };
 
-export default function Markdown({ text }: { text: string }) {
+const remarkPlugins = [remarkGfm];
+const rehypePlugins = [rehypeHighlight];
+
+/** A reply's text as Markdown. Parsing and highlighting are costly, so it's only redone when the text changes. */
+export default memo(function Markdown({ text }: { text: string }) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={components}>
+    <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>
       {text}
     </ReactMarkdown>
   );
-}
+});
