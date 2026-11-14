@@ -1,14 +1,14 @@
 // Save all chats and folders (with their images) to a file, and read such a file back.
-import type { ChatMessage } from './api';
 import { getImages, imageIdsIn } from './images';
-import type { Chat, Folder } from './storage';
+import { cleanChat, type Chat, type Folder } from './storage';
 
 const FORMAT = 'bobgpt-backup';
+const VERSION = 2; // the newest format this version of the app writes and can read
 
 /** Version 2 added `images`: id -> data URL, for the images the chats use. Version 1 files still restore. */
 export async function downloadBackup(chats: Chat[], folders: Folder[]) {
   const images = Object.fromEntries(await getImages([...imageIdsIn(chats)]));
-  const data = { format: FORMAT, version: 2, exportedAt: new Date().toISOString(), chats, folders, images };
+  const data = { format: FORMAT, version: VERSION, exportedAt: new Date().toISOString(), chats, folders, images };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -19,18 +19,6 @@ export async function downloadBackup(chats: Chat[], folders: Folder[]) {
 }
 
 const isString = (v: unknown): v is string => typeof v === 'string';
-
-function cleanMessage(m: any, images: Record<string, string>): ChatMessage | null {
-  if (!m || (m.role !== 'user' && m.role !== 'assistant') || !isString(m.content)) return null;
-  const out: ChatMessage = { role: m.role, content: m.content };
-  const ids = Array.isArray(m.images) ? m.images.filter((id: unknown) => isString(id) && Object.hasOwn(images, id)) : [];
-  if (m.role === 'user' && ids.length) out.images = ids;
-  if (m.trimmed === true) out.trimmed = true;
-  if (isString(m.thinking) && m.thinking) out.thinking = m.thinking;
-  if (typeof m.thoughtSeconds === 'number') out.thoughtSeconds = m.thoughtSeconds;
-  if (typeof m.tokensPerSecond === 'number') out.tokensPerSecond = m.tokensPerSecond;
-  return out;
-}
 
 /** Reads a backup file. Throws an Error with a plain-English message if it isn't one. */
 export async function readBackup(file: File): Promise<{ chats: Chat[]; folders: Folder[]; images: Record<string, string> }> {
@@ -43,6 +31,10 @@ export async function readBackup(file: File): Promise<{ chats: Chat[]; folders: 
   if (!data || data.format !== FORMAT || !Array.isArray(data.chats)) {
     throw new Error("That file isn't a BobGPT backup.");
   }
+  // A newer format might mean things this version doesn't understand, so it isn't half-restored.
+  if (typeof data.version === 'number' && data.version > VERSION) {
+    throw new Error("That backup was made by a newer version of BobGPT, so this version can't restore it.");
+  }
 
   const images: Record<string, string> = {};
   if (data.images && typeof data.images === 'object') {
@@ -51,21 +43,25 @@ export async function readBackup(file: File): Promise<{ chats: Chat[]; folders: 
     }
   }
 
-  const folders: Folder[] = (Array.isArray(data.folders) ? data.folders : [])
-    .filter((f: any) => f && isString(f.id) && isString(f.name))
-    .map((f: any) => ({ id: f.id, name: f.name, collapsed: !!f.collapsed }));
+  const folders: Folder[] = firstOfEachId(
+    (Array.isArray(data.folders) ? data.folders : [])
+      .filter((f: any) => f && isString(f.id) && isString(f.name))
+      .map((f: any) => ({ id: f.id, name: f.name, collapsed: !!f.collapsed })),
+  );
   const folderIds = new Set(folders.map((f) => f.id));
 
-  const chats: Chat[] = data.chats
-    .filter((c: any) => c && isString(c.id) && isString(c.title) && Array.isArray(c.messages))
-    .map((c: any) => ({
-      id: c.id,
-      title: c.title,
-      messages: c.messages.map((m: any) => cleanMessage(m, images)).filter((m: ChatMessage | null): m is ChatMessage => !!m),
-      updatedAt: typeof c.updatedAt === 'number' ? c.updatedAt : Date.now(),
-      folderId: isString(c.folderId) && folderIds.has(c.folderId) ? c.folderId : null,
-    }))
-    .filter((c: Chat) => c.messages.length > 0);
+  // The same checks as for the chats saved in this browser (storage.ts).
+  const chats = firstOfEachId(
+    (data.chats as unknown[])
+      .map((c) => cleanChat(c, { hasImage: (id) => Object.hasOwn(images, id), hasFolder: (id) => folderIds.has(id) }))
+      .filter((c): c is Chat => !!c),
+  );
 
   return { chats, folders, images };
+}
+
+/** Leaves out any item whose id came earlier in the list (a backup file shouldn't repeat one, but might if edited by hand). */
+function firstOfEachId<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => !seen.has(item.id) && seen.add(item.id));
 }

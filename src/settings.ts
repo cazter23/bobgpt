@@ -52,13 +52,13 @@ export const DEFAULT_SETTINGS: Settings = {
   showContext: true,
 };
 
-const KEY = 'homegpt-settings';
+export const SETTINGS_KEY = 'homegpt-settings';
 
 const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 export function loadSettings(): Settings {
   try {
-    const s = JSON.parse(localStorage.getItem(KEY) ?? '{}');
+    const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}');
     return {
       systemPrompt: typeof s.systemPrompt === 'string' ? s.systemPrompt : DEFAULT_SETTINGS.systemPrompt,
       temperature: isNumber(s.temperature) ? s.temperature : DEFAULT_SETTINGS.temperature,
@@ -85,7 +85,7 @@ export function loadSettings(): Settings {
 /** Returns false if the browser refused (storage full or blocked). */
 export function saveSettings(settings: Settings): boolean {
   try {
-    localStorage.setItem(KEY, JSON.stringify(settings));
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     return true;
   } catch {
     return false;

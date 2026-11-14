@@ -24,6 +24,16 @@ function CodeBlock({ children, preProps }: { children?: ReactNode; preProps: Com
 const components: Components = {
   // Links open in a new tab so the chat isn't navigated away from.
   a: ({ node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+  // An image in a reply is shown as a link, never loaded: loading it would send a request to whatever address
+  // the model wrote, and that address could carry text from the chat. Clicking the link opens it on purpose.
+  img: ({ src, alt }) =>
+    typeof src === 'string' && src ? (
+      <a href={src} target="_blank" rel="noreferrer" title={src}>
+        {alt ? `Image: ${alt}` : 'Image'}
+      </a>
+    ) : (
+      alt || null
+    ),
   // Code blocks get a small language label and a copy button in the corner.
   pre: ({ node, children, ...props }) => <CodeBlock preProps={props}>{children}</CodeBlock>,
   // Wide tables scroll sideways instead of stretching the page.

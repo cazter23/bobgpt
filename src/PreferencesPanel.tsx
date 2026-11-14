@@ -3,6 +3,7 @@ import type { Colour, Settings } from './settings';
 import { swatchBackground } from './theme';
 import { CODE_FONTS, TEXT_FONTS, loadAllFonts, type CodeFont, type TextFont } from './fonts';
 import { CloseIcon } from './icons';
+import { useDialogFocus } from './useDialogFocus';
 
 const SWATCHES: [Colour, string][] = [
   ['default', 'Twilight'],
@@ -52,6 +53,8 @@ export default function PreferencesPanel({ settings, onChange, onClose, chatCoun
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [dataNote, setDataNote] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  useDialogFocus(panelRef);
 
   async function restore(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -76,7 +79,15 @@ export default function PreferencesPanel({ settings, onChange, onClose, chatCoun
 
   return (
     <div className="settings-overlay from-left" onMouseDown={onClose}>
-      <aside className="settings-panel left" role="dialog" aria-label="Preferences" onMouseDown={(e) => e.stopPropagation()}>
+      <aside
+        ref={panelRef}
+        tabIndex={-1}
+        className="settings-panel left"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Preferences"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <header className="settings-header">
           <h2>Preferences</h2>
           <button className="topbar-button" aria-label="Close preferences" title="Close" onClick={onClose}>

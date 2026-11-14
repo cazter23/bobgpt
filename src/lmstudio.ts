@@ -1,6 +1,6 @@
 // Model loading and token counting through LM Studio's SDK (a WebSocket on the same port as the chat server).
 // Chat messages themselves still go through the OpenAI-compatible endpoint in api.ts.
-import { LMStudioClient } from '@lmstudio/sdk';
+import { LMStudioClient, type LLM } from '@lmstudio/sdk';
 
 let client: LMStudioClient | null = null;
 
@@ -107,20 +107,31 @@ export async function ensureNothingLoaded(timeoutMs = 45000): Promise<boolean> {
 
 /**
  * Returns a function that counts tokens the way the loaded model does.
- * Counts are remembered, and if LM Studio can't be asked it falls back to a rough estimate.
+ * Counts are remembered. If the model isn't loaded, or LM Studio can't be asked, it gives a rough estimate
+ * (not remembered, so the real count is tried again next time).
+ *
+ * This never uses `client.llm.model(identifier)`: that loads the model when it isn't loaded, which could
+ * load a second model (for example while another one is being switched to). It counts with the handle of
+ * the model that is loaded right now; once that model is unloaded the handle just fails.
  */
 export function tokenCounter(identifier: string): (text: string) => Promise<number> {
   const cache = new Map<string, number>();
+  let handle: Promise<LLM | undefined> | null = null; // shared by counts made at the same time
   return async (text) => {
     const known = cache.get(text);
     if (known !== undefined) return known;
-    let count: number;
+    handle ??= sdk(async (c) => (await c.llm.listLoaded()).find((m) => m.identifier === identifier));
     try {
-      count = await sdk(async (c) => (await c.llm.model(identifier)).countTokens(text));
+      const model = await handle;
+      if (model) {
+        const count = await model.countTokens(text);
+        cache.set(text, count);
+        return count;
+      }
     } catch {
-      count = Math.ceil(text.length / 3);
+      // LM Studio didn't answer, or the model was unloaded.
     }
-    cache.set(text, count);
-    return count;
+    handle = null; // look for the model again next time
+    return Math.ceil(text.length / 3);
   };
 }

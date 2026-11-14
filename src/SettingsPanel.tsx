@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useDialogFocus } from './useDialogFocus';
 import { listChatModels, listLoaded, type LoadedModel, type ModelOption } from './lmstudio';
 import type { ModelLoadSettings, OverflowPolicy, Settings } from './settings';
 import { CloseIcon } from './icons';
@@ -27,6 +28,8 @@ export default function SettingsPanel({
 }: Props) {
   const [current, setCurrent] = useState<Current | null | undefined>(undefined); // undefined = still looking
   const [gpuTouched, setGpuTouched] = useState(false);
+  const panelRef = useRef<HTMLElement>(null);
+  useDialogFocus(panelRef);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -72,7 +75,15 @@ export default function SettingsPanel({
 
   return (
     <div className="settings-overlay" onMouseDown={onClose}>
-      <aside className="settings-panel" role="dialog" aria-label="Settings" onMouseDown={(e) => e.stopPropagation()}>
+      <aside
+        ref={panelRef}
+        tabIndex={-1}
+        className="settings-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <header className="settings-header">
           <h2>Settings</h2>
           <button className="topbar-button" aria-label="Close settings" title="Close" onClick={onClose}>

@@ -5,6 +5,7 @@ import '@fontsource-variable/plus-jakarta-sans/wght-italic.css';
 import '@fontsource-variable/geist-mono';
 import '@fontsource-variable/geist-mono/wght-italic.css';
 import App from './App';
+import ErrorBoundary from './ErrorBoundary';
 import './styles.css';
 import { loadSettings } from './settings';
 import { applyAppearance, applyFonts } from './theme';
@@ -16,6 +17,8 @@ applyFonts(saved.textFont, saved.codeFont);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 );

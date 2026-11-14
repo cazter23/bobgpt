@@ -5,6 +5,7 @@ export const LMSTUDIO_URL = 'http://localhost:1234';
 
 export type Role = 'system' | 'user' | 'assistant';
 export type ChatMessage = {
+  id: string; // stays the same for the message's whole life, so the page can tell messages apart (never sent to the model)
   role: Role;
   content: string;
   images?: string[]; // on one of your messages: ids of attached images (the images themselves are in images.ts)
@@ -128,8 +129,7 @@ export async function* streamChat(
   try {
     while (true) {
       const { value, done } = await reader.read();
-      if (done) return;
-      buffer += value;
+      buffer += done ? '\n' : value; // at the end, a newline so that a last line without one is still read
 
       let newline: number;
       while ((newline = buffer.indexOf('\n')) >= 0) {
@@ -166,6 +166,7 @@ export async function* streamChat(
           yield piece;
         }
       }
+      if (done) return;
     }
   } finally {
     reader.cancel().catch(() => {});

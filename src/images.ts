@@ -157,9 +157,12 @@ export function imageIdsIn(chats: { messages: { images?: string[] }[] }[]): Set<
 /**
  * Deletes stored images that no saved chat uses any more (its chat or message was deleted,
  * or the chat was cut short by an edit or regenerate).
+ * `inUse` is asked only after the stored images have been listed, so an image that another tab stored and
+ * saved a chat with in the meantime is counted as used.
  */
-export async function pruneImages(keep: Set<string>) {
+export async function pruneImages(inUse: () => Set<string>) {
   const keys = ((await transaction('readonly', (store) => store.getAllKeys())) ?? []) as string[];
+  const keep = inUse();
   for (const id of keys) if (keep.has(id)) justStored.delete(id);
   const unused = keys.filter((id) => !keep.has(id) && !justStored.has(id));
   if (unused.length === 0) return;

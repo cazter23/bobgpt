@@ -5,7 +5,7 @@ import ModelPicker from './ModelPicker';
 import ContextDial from './ContextDial';
 import SettingsPanel from './SettingsPanel';
 import PreferencesPanel from './PreferencesPanel';
-import { loadSettings, saveSettings, type ModelLoadSettings, type Settings } from './settings';
+import { SETTINGS_KEY, loadSettings, saveSettings, type ModelLoadSettings, type Settings } from './settings';
 import { ContextError, NoVisionError, conversationTokens, fitToContext, tidyForModel, withoutImages } from './trim';
 import { addImage, forgetImages, getImages, imageIdsIn, pruneImages, shrinkImage, storeImageData, storeImages } from './images';
 import { AttachmentThumb, MessageImages } from './ImageThumbs';
@@ -31,12 +31,15 @@ import {
 import Sidebar from './Sidebar';
 import CopyButton from './CopyButton';
 import {
+  CHATS_KEY,
+  FOLDERS_KEY,
   loadChats,
   loadFolders,
   loadSidebarSize,
   saveChats,
   saveFolders,
   saveSidebarSize,
+  savedChatsUnreadable,
   titleFrom,
   type Chat,
   type Folder,
@@ -73,9 +76,9 @@ function pickGreeting(): string {
 
 const NO_VISION = "The loaded model can't see images. Load a vision model to attach them.";
 
-/** One of your messages, with its images (if any). */
-function userMessage(text: string, images: string[]): ChatMessage {
-  return { role: 'user', content: text, ...(images.length ? { images } : {}) };
+/** One of your messages, with its images (if any). An edited message keeps its `id`. */
+function userMessage(text: string, images: string[], id: string = crypto.randomUUID()): ChatMessage {
+  return { id, role: 'user', content: text, ...(images.length ? { images } : {}) };
 }
 
 /** True while files (not, say, a chat from the sidebar) are being dragged. */
@@ -85,6 +88,28 @@ function withLast(messages: ChatMessage[], patch: Partial<ChatMessage>): ChatMes
   const copy = messages.slice();
   copy[copy.length - 1] = { ...copy[copy.length - 1], ...patch };
   return copy;
+}
+
+/**
+ * Waits for `promise`, but gives up after `ms` (throwing an Error with `timeoutMessage`) or as soon as `signal`
+ * is aborted (throwing its reason). For calls that could otherwise hang: LM Studio's SDK socket and IndexedDB.
+ */
+function within<T>(promise: Promise<T>, ms: number, timeoutMessage: string, signal?: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const settle = (finish: () => void) => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      finish();
+    };
+    const onAbort = () => settle(() => reject(signal!.reason));
+    const timer = setTimeout(() => settle(() => reject(new Error(timeoutMessage))), ms);
+    if (signal?.aborted) return onAbort();
+    signal?.addEventListener('abort', onAbort);
+    promise.then(
+      (value) => settle(() => resolve(value)),
+      (e) => settle(() => reject(e)),
+    );
+  });
 }
 
 /** Makes a textarea grow with its content (up to the max-height set in CSS). */
@@ -175,10 +200,50 @@ export default function App() {
   useEffect(() => saveSidebarSize(sidebarSize), [sidebarSize]);
   // Images of saved chats are kept in IndexedDB. Once no saved chat uses one (its chat or message was
   // deleted, or an edit cut the chat short) it is deleted too. Also runs on start, to tidy up.
+  // Images used by the chats saved in storage are kept as well, as another tab may have chats this one doesn't know of yet.
+  // Not if the saved chats couldn't be read: their images are still needed if they're rescued.
   useEffect(() => {
-    const timer = setTimeout(() => pruneImages(imageIdsIn(chats)).catch(() => {}), 1000);
+    if (savedChatsUnreadable()) return;
+    const timer = setTimeout(() => {
+      pruneImages(() => new Set([...imageIdsIn(chats), ...imageIdsIn(loadChats())])).catch(() => {});
+    }, 1000);
     return () => clearTimeout(timer);
   }, [chats]);
+
+  // Say so if the saved chats couldn't be read when the app started.
+  useEffect(() => {
+    const problem = savedChatsUnreadable();
+    if (!problem) return;
+    setError(
+      problem.blocked
+        ? "This browser isn't letting the app use its storage, so saved chats can't be shown and new ones won't be saved."
+        : problem.copiedTo
+        ? `Your saved chats couldn't be read, so the list starts empty. The unreadable data was kept in this browser's storage as "${problem.copiedTo}".`
+        : "Your saved chats couldn't be read, and there was no room to keep a copy. Chats won't be saved until that is sorted out, so the old ones aren't overwritten.",
+    );
+  }, []);
+
+  // Another tab saved its chats, folders or settings: take them on here, so that this tab's next save doesn't
+  // overwrite them. (This tab's own saves don't fire the event, and saving what was just read changes nothing.)
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.storageArea !== localStorage) return;
+      const all = e.key === null; // the other tab cleared the storage
+      if (all || e.key === CHATS_KEY) {
+        const fresh = loadChats();
+        setChats(fresh);
+        // If the open chat was changed there, show that, unless a reply is being written or a message edited here.
+        const open = activeId ? fresh.find((c) => c.id === activeId) : undefined;
+        if (open && !busy.current && editingIndex === null) {
+          setMessages((prev) => (JSON.stringify(prev) === JSON.stringify(open.messages) ? prev : open.messages));
+        }
+      }
+      if (all || e.key === FOLDERS_KEY) setFolders(loadFolders());
+      if (all || e.key === SETTINGS_KEY) setSettings(loadSettings());
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [activeId, editingIndex]);
   useEffect(() => {
     if (!saveSettings(settings)) setError("Couldn't save your settings: the browser's storage is full or blocked.");
   }, [settings]);
@@ -220,9 +285,11 @@ export default function App() {
     };
   }, [model, status, modelsVersion]);
 
-  // ...and how much of it this chat uses. Counted by the model's own tokenizer, once a reply has finished.
+  // ...and how much of it this chat uses. Counted by the model's own tokenizer, once a reply has finished
+  // (and not while a model is being loaded or ejected, when `model` still names the one on its way out).
+  const swapping = !!loading;
   useEffect(() => {
-    if (!settings.showContext || !model || !contextSize || generating) return;
+    if (!settings.showContext || !model || !contextSize || generating || swapping) return;
     let cancelled = false;
     const timer = setTimeout(async () => {
       const count = (counters.current[model] ??= tokenCounter(model));
@@ -238,7 +305,7 @@ export default function App() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [messages, settings.systemPrompt, settings.showContext, model, contextSize, generating, vision]);
+  }, [messages, settings.systemPrompt, settings.showContext, model, contextSize, generating, vision, swapping]);
 
   // Incognito gets its own colours (see the end of styles.css), so the whole page, not just .app, changes.
   useEffect(() => {
@@ -300,7 +367,12 @@ export default function App() {
    * Returns false if no reply could be started (nothing changes in that case).
    */
   async function replyTo(history: ChatMessage[]): Promise<boolean> {
-    if (busy.current || loadingRef.current) return false;
+    if (busy.current) return false;
+    if (loadingRef.current) {
+      setError('Wait for the model to finish loading, then try again.');
+      return false;
+    }
+    if (history[history.length - 1]?.role !== 'user') return false; // nothing to answer
     busy.current = true;
     setError(null);
 
@@ -312,15 +384,19 @@ export default function App() {
           : 'No model is loaded in LM Studio. Load one there, then try again.',
       );
       busy.current = false;
+      // Like any error, this pauses the queue. (A message queued meanwhile would otherwise wait for good,
+      // as nothing else would tell the queue to try again.) The next reply that starts un-pauses it.
+      setQueuePaused(true);
       return false;
     }
 
     setQueuePaused(false);
 
     // Images go to IndexedDB before the chat that uses them is saved (never for incognito chats).
+    // (Not waited on for ever: there's no Stop button yet at this point.)
     if (!incognito) {
       try {
-        await storeImages(history.flatMap((m) => m.images ?? []));
+        await within(storeImages(history.flatMap((m) => m.images ?? [])), 15000, 'timeout');
       } catch {
         setError("Couldn't save the images in this browser's storage. They'll still be sent, but may be gone later.");
       }
@@ -332,14 +408,15 @@ export default function App() {
     commit(chatId, history);
 
     setEditingIndex(null);
-    setMessages([...history, { role: 'assistant', content: '' }]);
+    const replyId = crypto.randomUUID(); // the same while it streams and once it's saved
+    setMessages([...history, { id: replyId, role: 'assistant', content: '' }]);
     setGenerating(true);
     stickToBottom.current = true;
-    stream(currentModel, history, chatId);
+    stream(currentModel, history, chatId, replyId);
     return true;
   }
 
-  async function stream(currentModel: string, history: ChatMessage[], chatId: string) {
+  async function stream(currentModel: string, history: ChatMessage[], chatId: string, replyId: string) {
     const controller = new AbortController();
     abortRef.current = controller;
     let reply = '';
@@ -351,7 +428,7 @@ export default function App() {
     const stats = { tokens: 0 };
     let thoughtSeconds: number | undefined;
     /** The reply so far, split into its thinking (if any) and the answer. */
-    const view = (streaming: boolean): Partial<ChatMessage> => {
+    const view = (streaming: boolean): Partial<Omit<ChatMessage, 'id' | 'role'>> => {
       const { thinking, answer, open } = splitThinking(reply, streaming);
       // Done thinking once the answer starts, or once the reply is over (even if it was stopped mid-thought).
       if (thinking && (!open || !streaming) && thoughtSeconds === undefined) thoughtSeconds = (Date.now() - startedAt) / 1000;
@@ -371,36 +448,41 @@ export default function App() {
       setMessages((prev) => withLast(prev, view(true)));
     };
 
+    /** If the chat is too long for the model's context, leaves out older messages (only in what is sent). */
+    const fit = async (): Promise<{ messages: ChatMessage[]; trimmed: boolean } | null> => {
+      const loaded = (await listLoaded()).find((m) => m.identifier === currentModel);
+      if (!loaded) return null;
+      // A model that can't see images gets only the text of earlier messages (the chat keeps its images).
+      if (!loaded.vision && history[history.length - 1].images?.length) throw new NoVisionError();
+      const shown = loaded.vision ? history : withoutImages(history);
+      const count = tokenCounter(currentModel);
+      const system = settings.systemPrompt.trim() ? (await count(settings.systemPrompt)) + 8 : 0;
+      const budget = loaded.contextLength - (settings.maxTokens ?? 1024) - system - 32;
+      return fitToContext(tidyForModel(shown), budget, settings.overflow, count);
+    };
+
     let sent = tidyForModel(history);
     try {
-      // If the chat is too long for the model's context, leave out older messages (only in what is sent).
+      // Stop works here too, and if LM Studio doesn't answer in time the whole chat is sent and it copes.
       try {
-        const loaded = (await listLoaded()).find((m) => m.identifier === currentModel);
-        if (loaded) {
-          // A model that can't see images gets only the text of earlier messages (the chat keeps its images).
-          if (!loaded.vision && history[history.length - 1].images?.length) throw new NoVisionError();
-          const shown = loaded.vision ? history : withoutImages(history);
-          const count = tokenCounter(currentModel);
-          const system = settings.systemPrompt.trim() ? (await count(settings.systemPrompt)) + 8 : 0;
-          const budget = loaded.contextLength - (settings.maxTokens ?? 1024) - system - 32;
-          const fitted = await fitToContext(tidyForModel(shown), budget, settings.overflow, count);
+        const fitted = await within(fit(), 15000, "LM Studio didn't answer about the model's context.", controller.signal);
+        if (fitted) {
           sent = fitted.messages;
           trimmed = fitted.trimmed;
-          if (trimmed) {
-            setMessages((prev) => {
-              const copy = prev.slice();
-              copy[copy.length - 1] = { ...copy[copy.length - 1], trimmed: true };
-              return copy;
-            });
-          }
+          if (trimmed) setMessages((prev) => withLast(prev, { trimmed: true }));
         }
       } catch (e) {
-        if (e instanceof ContextError) throw e;
+        if (e instanceof ContextError || controller.signal.aborted) throw e;
         // Couldn't ask LM Studio about the context: send everything and let it cope.
       }
 
       const options = { systemPrompt: settings.systemPrompt, temperature: settings.temperature, maxTokens: settings.maxTokens };
-      const images = await getImages(sent.flatMap((m) => m.images ?? []));
+      const images = await within(
+        getImages(sent.flatMap((m) => m.images ?? [])),
+        15000,
+        "Couldn't read this chat's images from the browser's storage.",
+        controller.signal,
+      );
       for await (const piece of streamChat(currentModel, sent, images, options, controller.signal, stats)) {
         lastAt = Date.now();
         if (!startedAt) startedAt = lastAt;
@@ -415,9 +497,12 @@ export default function App() {
       }
     } finally {
       cancelAnimationFrame(frame);
-      // Keep whatever arrived; drop the reply if nothing did. Then save it.
-      const finalMessages: ChatMessage[] = reply
-        ? [...history, { role: 'assistant', ...view(false), ...(trimmed ? { trimmed } : {}) } as ChatMessage]
+      // Keep whatever arrived; drop the reply if nothing did (or only blank space). Then save it.
+      const final = view(false);
+      const gotReply = !!(final.content || final.thinking);
+      const stopped = controller.signal.aborted;
+      const finalMessages: ChatMessage[] = gotReply
+        ? [...history, { id: replyId, role: 'assistant', content: '', ...final, ...(trimmed ? { trimmed } : {}) }]
         : history;
       setMessages(finalMessages);
       commit(chatId, finalMessages);
@@ -425,13 +510,14 @@ export default function App() {
       abortRef.current = null;
       busy.current = false;
       inputRef.current?.focus();
+      if (!gotReply && !stopped && !failed) setError('The model sent back an empty reply. Try again, or try another model.');
       // Stopping a reply, or an error, pauses the queue instead of sending the next message.
-      if (controller.signal.aborted || failed || !reply) setQueuePaused(true);
+      if (stopped || failed || !gotReply) setQueuePaused(true);
 
       // After the first reply of a saved chat, let the model write its name (if that's switched on).
-      if (reply && !controller.signal.aborted && !incognito && settings.autoTitle && history.length === 1) {
-        const answer = splitThinking(reply).answer;
-        if (answer) pendingName.current = { modelId: currentModel, chatId, userText: history[0].content, replyText: answer };
+      // Not after an error: the model may have been unloaded, and asking it for a name could load it again.
+      if (gotReply && !stopped && !failed && !incognito && settings.autoTitle && history.length === 1 && final.content) {
+        pendingName.current = { modelId: currentModel, chatId, userText: history[0].content, replyText: final.content };
       }
     }
   }
@@ -545,6 +631,7 @@ export default function App() {
     const p = pendingName.current;
     if (!p || generating || busy.current || (queue.length > 0 && !queuePaused)) return;
     pendingName.current = null;
+    if (p.modelId !== model) return; // another model is loaded now, and asking the old one could load it again
     nameChat(p.modelId, p.chatId, p.userText, p.replyText);
   }, [generating, queue, queuePaused]);
 
@@ -574,10 +661,20 @@ export default function App() {
     });
   }, [generating, queuePaused, queue, loading, messages]);
 
+  /**
+   * The message that Regenerate at `index` answers again: that message if it's yours, otherwise your nearest
+   * message before it (after a delete, two replies can be next to each other). -1 if there is none, which
+   * happens when the chat starts with a reply because your first message was deleted.
+   */
+  function answerFor(index: number): number {
+    for (let i = index; i >= 0; i--) if (messages[i].role === 'user') return i;
+    return -1;
+  }
+
   /** On a reply: replace it. On one of your messages: answer it again. Everything after is deleted. */
   function regenerate(index: number) {
-    const keepThrough = messages[index].role === 'assistant' ? index - 1 : index;
-    replyTo(messages.slice(0, keepThrough + 1));
+    const keepThrough = answerFor(index);
+    if (keepThrough >= 0) replyTo(messages.slice(0, keepThrough + 1));
   }
 
   /** Removes just this one message. If it was the last one, the whole chat goes. */
@@ -607,9 +704,9 @@ export default function App() {
   function submitEdit() {
     if (editingIndex === null) return;
     const text = editText.trim();
-    const images = messages[editingIndex].images ?? []; // an edit keeps the message's images
+    const { id, images = [] } = messages[editingIndex]; // an edit keeps the message's images (and its id)
     if (!text && images.length === 0) return;
-    replyTo([...messages.slice(0, editingIndex), userMessage(text, images)]);
+    replyTo([...messages.slice(0, editingIndex), userMessage(text, images, id)]);
   }
 
   /** Unloads the current model and loads another, with its saved context length and GPU offload. */
@@ -816,6 +913,7 @@ export default function App() {
   }, [editingIndex]);
 
   const sendTitle = `Send (${settings.ctrlEnterToSend ? 'Ctrl+Enter' : 'Enter'})`;
+  const firstUser = messages.findIndex((m) => m.role === 'user'); // replies before it have nothing to regenerate
 
   const composer = (
     <>
@@ -1058,9 +1156,11 @@ export default function App() {
                     const actions = (
                       <div className={`actions${generating ? ' hidden' : ''}`}>
                         {m.role === 'assistant' && <CopyButton text={m.content} />}
-                        <button aria-label="Regenerate" title="Regenerate" onClick={() => regenerate(i)}>
-                          <RegenerateIcon />
-                        </button>
+                        {firstUser >= 0 && i >= firstUser && (
+                          <button aria-label="Regenerate" title="Regenerate" onClick={() => regenerate(i)}>
+                            <RegenerateIcon />
+                          </button>
+                        )}
                         {m.role === 'user' && (
                           <>
                             <button aria-label="Edit" title="Edit" onClick={() => startEdit(i)}>
@@ -1077,7 +1177,7 @@ export default function App() {
 
                     if (m.role === 'user' && i === editingIndex) {
                       return (
-                        <div key={i} className="msg user editing">
+                        <div key={m.id} className="msg user editing">
                           {m.images?.length ? <MessageImages ids={m.images} withText={false} /> : null}
                           <textarea
                             ref={editRef}
@@ -1101,7 +1201,7 @@ export default function App() {
 
                     if (m.role === 'user') {
                       return (
-                        <div key={i} className="msg user" data-msg-index={i}>
+                        <div key={m.id} className="msg user" data-msg-index={i}>
                           <div className="bubble">
                             {m.images?.length ? <MessageImages ids={m.images} withText={!!m.content} /> : null}
                             {m.content}
@@ -1112,7 +1212,7 @@ export default function App() {
                     }
 
                     return (
-                      <div key={i} className={`msg assistant${generating && i === messages.length - 1 ? ' streaming' : ''}`} data-msg-index={i}>
+                      <div key={m.id} className={`msg assistant${generating && i === messages.length - 1 ? ' streaming' : ''}`} data-msg-index={i}>
                         {m.trimmed && <p className="trim-note">Earlier messages were left out to fit the context.</p>}
                         {m.thinking && settings.thinking !== 'hidden' && (
                           <details className="thinking" key={settings.thinking} open={settings.thinking === 'open'}>
