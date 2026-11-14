@@ -250,6 +250,9 @@ body {
   pointer-events: none; user-select: none;
 }
 .code-lang + pre { padding-top: 26px; }
+/* In replies: the site a link goes to (when its text doesn't say), and images, which are described instead of loaded */
+.link-site { color: var(--muted); font-size: 0.85em; }
+.md-image { color: var(--muted); font-style: italic; overflow-wrap: anywhere; }
 .msg pre {
   margin: 0;
   background: var(--code-bg);

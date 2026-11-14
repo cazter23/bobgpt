@@ -4,13 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!--
-      A second line of defence for privacy: the page may only load images from itself (or embedded ones, like
-      attachments), and may only talk to itself and to LM Studio on port 1234. ws://localhost:* is for the dev
-      server's live reload.
+      A second line of defence for privacy: everything the page loads (code, styles, fonts, images) comes from itself
+      (images and fonts may also be embedded ones, like attachments), it may only talk to itself and to LM Studio on
+      port 1234, and it can't show other sites in a frame, embed plugins or send forms anywhere.
+      Inline styles are allowed because the colour themes are applied as a <style> element (theme.ts).
+      The dev server adds what its live reload needs (see vite.config.ts); the built app uses exactly this.
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="img-src 'self' data:; connect-src 'self' http://localhost:1234 http://127.0.0.1:1234 ws://localhost:1234 ws://127.0.0.1:1234 ws://localhost:* ws://127.0.0.1:*"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' http://localhost:1234 http://127.0.0.1:1234 ws://localhost:1234 ws://127.0.0.1:1234; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
     />
     <title>BobGPT</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />

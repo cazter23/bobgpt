@@ -51,11 +51,28 @@ describe('the page', () => {
     expect(existsSync('public/favicon.svg')).toBe(true);
   });
 
-  it('still only allows talking to itself and LM Studio (the privacy rule)', () => {
-    const csp = /Content-Security-Policy"\s+content="([^"]+)"/.exec(html)![1];
-    const connect = csp.split(';').find((part) => part.trim().startsWith('connect-src'))!;
-    const allowed = connect.trim().split(/\s+/).slice(1);
-    for (const source of allowed) expect(source).toMatch(/^('self'|(http|ws):\/\/(localhost|127\.0\.0\.1):(1234|\*))$/);
+  // The built app's Content-Security-Policy, directive by directive: { 'connect-src': ["'self'", ...], ... }
+  const policy = Object.fromEntries(
+    /Content-Security-Policy"\s+content="([^"]+)"/
+      .exec(html)![1]
+      .split(';')
+      .map((part) => part.trim().split(/\s+/))
+      .filter((words) => words[0])
+      .map(([name, ...sources]) => [name, sources]),
+  );
+
+  it('still only allows talking to itself and LM Studio on port 1234 (the privacy rule)', () => {
+    expect(policy['connect-src']).toContain("'self'");
+    for (const source of policy['connect-src']) expect(source).toMatch(/^('self'|(http|ws):\/\/(localhost|127\.0\.0\.1):1234)$/);
+  });
+
+  it('loads code, styles, images and fonts only from itself, and nothing else from anywhere', () => {
+    expect(policy['default-src']).toEqual(["'self'"]);
+    expect(policy['script-src']).toEqual(["'self'"]);
+    expect(policy['style-src']).toEqual(["'self'", "'unsafe-inline'"]); // the colour themes are a <style> element
+    expect(policy['img-src']).toEqual(["'self'", 'data:']);
+    expect(policy['font-src']).toEqual(["'self'", 'data:']);
+    for (const name of ['frame-src', 'object-src', 'base-uri', 'form-action']) expect(policy[name], name).toEqual(["'none'"]);
   });
 });
 
