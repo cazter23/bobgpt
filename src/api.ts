@@ -1,4 +1,5 @@
 // Talks to LM Studio's local server (default http://localhost:1234).
+import { splitThinking } from './thinking';
 
 export const LMSTUDIO_URL = 'http://localhost:1234';
 
@@ -9,6 +10,7 @@ export type ChatMessage = {
   trimmed?: boolean; // on a reply: older messages were left out of what the model saw
   thinking?: string; // on a reply from a reasoning model: what it thought first (never sent back to the model)
   thoughtSeconds?: number; // how long that took
+  tokensPerSecond?: number; // how fast the reply was written
 };
 
 /** How a reply should be generated. */
@@ -68,6 +70,7 @@ export async function* streamChat(
   messages: ChatMessage[],
   options: ChatOptions,
   signal: AbortSignal,
+  stats?: { tokens: number }, // if given, counts the tokens that arrive (one per piece, or LM Studio's own count)
 ): AsyncGenerator<string> {
   // Only role and content go to the model, with the system prompt (if any) first.
   const sent = messages.map(({ role, content }) => ({ role, content }));
@@ -133,6 +136,8 @@ export async function* streamChat(
           throw new Error(typeof chunk.error === 'string' ? chunk.error : chunk.error.message);
         }
         const delta = chunk.choices?.[0]?.delta;
+        if (stats && (delta?.content || delta?.reasoning_content || delta?.reasoning)) stats.tokens++;
+        if (stats && typeof chunk.usage?.completion_tokens === 'number') stats.tokens = chunk.usage.completion_tokens;
         // Reasoning that LM Studio sends separately is wrapped in <think> tags, like the inline kind.
         const thought = delta?.reasoning_content ?? delta?.reasoning;
         if (thought) {
@@ -150,5 +155,48 @@ export async function* streamChat(
     }
   } finally {
     reader.cancel().catch(() => {});
+  }
+}
+
+/**
+ * Asks the loaded model for a short name for a chat, from its first message and reply.
+ * Returns null if it couldn't (no answer, an error, or it took too long).
+ */
+export async function generateTitle(model: string, userText: string, replyText: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);
+  try {
+    const res = await fetch(`${LMSTUDIO_URL}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model,
+        stream: false,
+        temperature: 0.3,
+        max_tokens: 200,
+        messages: [
+          {
+            role: 'system',
+            content: 'Write a title of 2 to 5 words for the chat below. Reply with only the title: no quotes, no full stop.',
+          },
+          { role: 'user', content: `User: ${userText.slice(0, 600)}\n\nAssistant: ${replyText.slice(0, 600)}` },
+        ],
+      }),
+    });
+    if (!res.ok) return null;
+    const raw: unknown = (await res.json())?.choices?.[0]?.message?.content;
+    if (typeof raw !== 'string') return null;
+    const { answer } = splitThinking(raw);
+    const title = answer
+      .split('\n')[0]
+      .replace(/^[\s"'`*#]+|[\s"'`*.]+$/g, '')
+      .trim();
+    if (!title) return null;
+    return title.length > 50 ? `${title.slice(0, 50).trimEnd()}…` : title;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
   }
 }

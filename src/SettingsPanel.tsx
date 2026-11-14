@@ -17,7 +17,14 @@ type Props = {
 type Current = { model: ModelOption; loaded: LoadedModel };
 
 /** The settings panel that slides in from the right. */
-export default function SettingsPanel({ settings, onChange, onClose, onReload, busy, version }: Props) {
+export default function SettingsPanel({
+  settings,
+  onChange,
+  onClose,
+  onReload,
+  busy,
+  version,
+}: Props) {
   const [current, setCurrent] = useState<Current | null | undefined>(undefined); // undefined = still looking
   const [gpuTouched, setGpuTouched] = useState(false);
 

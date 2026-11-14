@@ -1,6 +1,6 @@
 import { useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent } from 'react';
 import type { Chat, Folder, SidebarSize } from './storage';
-import { ChevronIcon, EditIcon, FolderIcon, FolderPlusIcon, PlusIcon, TrashIcon } from './icons';
+import { ChevronIcon, EditIcon, FolderIcon, FolderPlusIcon, PlusIcon, SlidersIcon, TrashIcon } from './icons';
 
 const WIDTHS: Record<SidebarSize, number> = { hidden: 0, medium: 240, large: 320 };
 
@@ -26,6 +26,7 @@ type Props = {
   onToggleFolder: (id: string) => void;
   onDeleteFolder: (id: string) => void;
   onMoveChat: (chatId: string, folderId: string | null) => void;
+  onOpenPreferences: () => void;
 };
 
 export default function Sidebar(props: Props) {
@@ -144,6 +145,12 @@ export default function Sidebar(props: Props) {
             ))}
             {unfiled.map(chatRow)}
           </ul>
+
+          <div className="sidebar-footer">
+            <button className="topbar-button" aria-label="Preferences" title="Preferences" onClick={props.onOpenPreferences}>
+              <SlidersIcon />
+            </button>
+          </div>
         </div>
       </aside>
       <div

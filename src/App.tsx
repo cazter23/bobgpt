@@ -1,13 +1,27 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { getLoadedModel, streamChat, ServerUnreachableError, type ChatMessage } from './api';
+import { generateTitle, getLoadedModel, streamChat, ServerUnreachableError, type ChatMessage } from './api';
 import { ensureNothingLoaded, listLoaded, swapModel, tokenCounter, type ModelOption } from './lmstudio';
 import ModelPicker from './ModelPicker';
 import SettingsPanel from './SettingsPanel';
+import PreferencesPanel from './PreferencesPanel';
 import { loadSettings, saveSettings, type ModelLoadSettings, type Settings } from './settings';
 import { fitToContext, MessageTooLongError, tidyForModel } from './trim';
 import Markdown from './Markdown';
 import { splitThinking } from './thinking';
-import { ComposeIcon, EditIcon, GearIcon, GhostIcon, RegenerateIcon, SendIcon, SidebarIcon, StopIcon, TrashIcon } from './icons';
+import { downloadBackup, readBackup } from './backup';
+import { applyAppearance, followSystemTheme } from './theme';
+import {
+  ComposeIcon,
+  EditIcon,
+  GearIcon,
+  GhostIcon,
+  RegenerateIcon,
+  SendIcon,
+  SidebarIcon,
+  SlidersIcon,
+  StopIcon,
+  TrashIcon,
+} from './icons';
 import Sidebar from './Sidebar';
 import CopyButton from './CopyButton';
 import {
@@ -68,10 +82,12 @@ function useAutoGrow(ref: React.RefObject<HTMLTextAreaElement | null>) {
   });
 }
 
-/** Enter submits, Shift+Enter adds a new line. */
-function enterToSubmit(submit: () => void) {
+/** Enter submits and Shift+Enter adds a new line; or, if `ctrlToSend`, Ctrl+Enter submits and Enter adds a new line. */
+function enterToSubmit(submit: () => void, ctrlToSend: boolean) {
   return (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+    const submits = ctrlToSend ? e.ctrlKey || e.metaKey : !e.shiftKey;
+    if (submits) {
       e.preventDefault();
       submit();
     }
@@ -93,7 +109,13 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null); // null = a new chat that isn't saved yet
   const [sidebarSize, setSidebarSize] = useState(loadSidebarSize);
   const [settings, setSettings] = useState<Settings>(loadSettings);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false); // the gear: chat and model settings
+  const [prefsOpen, setPrefsOpen] = useState(false); // the bottom-left icon: appearance, behaviour, your data
+
+  function openPreferences() {
+    setSettingsOpen(false);
+    setPrefsOpen(true);
+  }
   const [loading, setLoading] = useState<{ name: string; progress: number; stopping?: boolean; message?: string } | null>(null); // a model is being swapped
   const [modelsVersion, setModelsVersion] = useState(0); // goes up after each swap
   const [incognito, setIncognito] = useState(false); // this chat is never saved
@@ -122,6 +144,14 @@ export default function App() {
   useEffect(() => {
     if (!saveSettings(settings)) setError("Couldn't save your settings: the browser's storage is full or blocked.");
   }, [settings]);
+
+  // Theme and text size. "System" follows the computer's light/dark setting as it changes.
+  useEffect(() => {
+    const apply = () => applyAppearance(settings.theme, settings.textSize, settings.colour, settings.customColour);
+    apply();
+    if (settings.theme !== 'system') return;
+    return followSystemTheme(apply);
+  }, [settings.theme, settings.textSize, settings.colour, settings.customColour]);
 
   // Incognito gets its own colours (see the end of styles.css), so the whole page, not just .app, changes.
   useEffect(() => {
@@ -218,16 +248,22 @@ export default function App() {
     let trimmed = false;
     let frame = 0;
     let startedAt = 0; // when the first piece arrived
+    let lastAt = 0; // when the latest one did
+    const stats = { tokens: 0 };
     let thoughtSeconds: number | undefined;
     /** The reply so far, split into its thinking (if any) and the answer. */
     const view = (streaming: boolean): Partial<ChatMessage> => {
       const { thinking, answer, open } = splitThinking(reply, streaming);
       // Done thinking once the answer starts, or once the reply is over (even if it was stopped mid-thought).
       if (thinking && (!open || !streaming) && thoughtSeconds === undefined) thoughtSeconds = (Date.now() - startedAt) / 1000;
+      // Speed only counts once the reply is over, and only if there was enough to measure.
+      const seconds = (lastAt - startedAt) / 1000;
+      const tokensPerSecond = !streaming && stats.tokens > 1 && seconds > 0.3 ? Math.round((stats.tokens / seconds) * 10) / 10 : undefined;
       return {
         content: answer,
         ...(thinking ? { thinking } : {}),
         ...(thoughtSeconds !== undefined ? { thoughtSeconds } : {}),
+        ...(tokensPerSecond ? { tokensPerSecond } : {}),
       };
     };
     // Re-render at most once per animation frame, not once per token.
@@ -262,8 +298,9 @@ export default function App() {
       }
 
       const options = { systemPrompt: settings.systemPrompt, temperature: settings.temperature, maxTokens: settings.maxTokens };
-      for await (const piece of streamChat(currentModel, sent, options, controller.signal)) {
-        if (!startedAt) startedAt = Date.now();
+      for await (const piece of streamChat(currentModel, sent, options, controller.signal, stats)) {
+        lastAt = Date.now();
+        if (!startedAt) startedAt = lastAt;
         reply += piece;
         if (!frame) frame = requestAnimationFrame(flush);
       }
@@ -284,7 +321,21 @@ export default function App() {
       abortRef.current = null;
       busy.current = false;
       inputRef.current?.focus();
+
+      // After the first reply of a saved chat, let the model write its name (if that's switched on).
+      if (reply && !controller.signal.aborted && !incognito && settings.autoTitle && history.length === 1) {
+        const answer = splitThinking(reply).answer;
+        if (answer) nameChat(currentModel, chatId, history[0].content, answer);
+      }
     }
+  }
+
+  /** Asks the model for a short name and applies it, unless the chat has been renamed in the meantime. */
+  async function nameChat(modelId: string, chatId: string, userText: string, replyText: string) {
+    const title = await generateTitle(modelId, userText, replyText);
+    if (!title) return;
+    const placeholder = titleFrom(userText);
+    setChats((prev) => prev.map((c) => (c.id === chatId && c.title === placeholder ? { ...c, title } : c)));
   }
 
   async function send() {
@@ -438,6 +489,35 @@ export default function App() {
     stickToBottom.current = true;
   }
 
+  /** Adds the chats and folders from a backup file. Anything already here (same id) is left as it is. */
+  async function importChats(file: File): Promise<string> {
+    const backup = await readBackup(file); // throws a readable error if it isn't a backup
+    const haveChat = new Set(chats.map((c) => c.id));
+    const haveFolder = new Set(folders.map((f) => f.id));
+    const newChats = backup.chats.filter((c) => !haveChat.has(c.id));
+    const newFolders = backup.folders.filter((f) => !haveFolder.has(f.id));
+    setFolders((prev) => [...prev, ...newFolders]);
+    setChats((prev) => [...prev, ...newChats].sort((a, b) => b.updatedAt - a.updatedAt));
+
+    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    const skipped = backup.chats.length - newChats.length;
+    if (newChats.length === 0 && newFolders.length === 0) return `Nothing new: ${plural(skipped, 'chat')} already here.`;
+    return (
+      `Added ${plural(newChats.length, 'chat')}` +
+      (newFolders.length ? ` and ${plural(newFolders.length, 'folder')}` : '') +
+      '.' +
+      (skipped ? ` ${plural(skipped, 'chat')} already here.` : '')
+    );
+  }
+
+  /** Deletes every saved chat and folder (an incognito chat on screen is left alone). */
+  function deleteAllChats() {
+    if (busy.current) return;
+    setChats([]);
+    setFolders([]);
+    if (activeId) openChat(null);
+  }
+
   function renameChat(id: string, title: string) {
     setChats((prev) => prev.map((c) => (c.id === id ? { ...c, title } : c)));
   }
@@ -481,13 +561,15 @@ export default function App() {
     el.setSelectionRange(el.value.length, el.value.length);
   }, [editingIndex]);
 
+  const sendTitle = `Send (${settings.ctrlEnterToSend ? 'Ctrl+Enter' : 'Enter'})`;
+
   const composer = (
     <div className="inputbox">
       <textarea
         ref={inputRef}
         value={input}
         onChange={(e) => setInput(e.target.value)}
-        onKeyDown={enterToSubmit(send)}
+        onKeyDown={enterToSubmit(send, settings.ctrlEnterToSend)}
         placeholder={loading ? `Loading ${loading.name}…` : 'Message'}
         rows={1}
         autoFocus
@@ -497,7 +579,7 @@ export default function App() {
           <StopIcon />
         </button>
       ) : (
-        <button className="icon-button" aria-label="Send" title="Send (Enter)" onClick={send} disabled={!!loading}>
+        <button className="icon-button" aria-label="Send" title={sendTitle} onClick={send} disabled={!!loading}>
           <SendIcon />
         </button>
       )}
@@ -530,7 +612,10 @@ export default function App() {
             onCancel={() => loadAbort.current?.abort()}
             onEject={ejectModel}
           />
-          <button className="topbar-button" aria-label="Settings" title="Settings" onClick={() => setSettingsOpen(true)}>
+          <button className="topbar-button" aria-label="Settings" title="Settings" onClick={() => {
+              setPrefsOpen(false);
+              setSettingsOpen(true);
+            }}>
             <GearIcon />
           </button>
           <button
@@ -572,6 +657,7 @@ export default function App() {
           onToggleFolder={toggleFolder}
           onDeleteFolder={deleteFolder}
           onMoveChat={moveChat}
+          onOpenPreferences={openPreferences}
         />
         <div className="pane">
           {messages.length === 0 ? (
@@ -625,13 +711,13 @@ export default function App() {
                             onChange={(e) => setEditText(e.target.value)}
                             onKeyDown={(e) => {
                               if (e.key === 'Escape') setEditingIndex(null);
-                              else enterToSubmit(submitEdit)(e);
+                              else enterToSubmit(submitEdit, settings.ctrlEnterToSend)(e);
                             }}
                             rows={1}
                           />
                           <div className="edit-buttons">
                             <button onClick={() => setEditingIndex(null)}>Cancel</button>
-                            <button className="icon-button" aria-label="Send" title="Send (Enter)" onClick={submitEdit}>
+                            <button className="icon-button" aria-label="Send" title={sendTitle} onClick={submitEdit}>
                               <SendIcon />
                             </button>
                           </div>
@@ -651,8 +737,8 @@ export default function App() {
                     return (
                       <div key={i} className={`msg assistant${generating && i === messages.length - 1 ? ' streaming' : ''}`}>
                         {m.trimmed && <p className="trim-note">Earlier messages were left out to fit the context.</p>}
-                        {m.thinking && (
-                          <details className="thinking">
+                        {m.thinking && settings.thinking !== 'hidden' && (
+                          <details className="thinking" key={settings.thinking} open={settings.thinking === 'open'}>
                             <summary>
                               {m.thoughtSeconds === undefined
                                 ? 'Thinking…'
@@ -664,6 +750,7 @@ export default function App() {
                         <div className="content">
                           <Markdown text={m.content} />
                         </div>
+                        {settings.showSpeed && m.tokensPerSecond && <p className="msg-meta">{m.tokensPerSecond} tok/s</p>}
                         {actions}
                       </div>
                     );
@@ -689,6 +776,26 @@ export default function App() {
           busy={generating || !!loading}
           version={modelsVersion}
         />
+      )}
+
+      {prefsOpen && (
+        <PreferencesPanel
+          settings={settings}
+          onChange={setSettings}
+          onClose={() => setPrefsOpen(false)}
+          chatCount={chats.length}
+          onExport={() => downloadBackup(chats, folders)}
+          onImport={importChats}
+          onDeleteAll={deleteAllChats}
+          busy={generating}
+        />
+      )}
+
+      {/* With the sidebar hidden, the preferences button stays reachable in the bottom-left corner. */}
+      {sidebarSize === 'hidden' && (
+        <button className="topbar-button prefs-floating" aria-label="Preferences" title="Preferences" onClick={openPreferences}>
+          <SlidersIcon />
+        </button>
       )}
 
       {leaveAction && (
