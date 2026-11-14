@@ -2,15 +2,17 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Keyboar
 import { generateTitle, getLoadedModel, streamChat, ServerUnreachableError, type ChatMessage } from './api';
 import { ensureNothingLoaded, listLoaded, swapModel, tokenCounter, type ModelOption } from './lmstudio';
 import ModelPicker from './ModelPicker';
+import ContextDial from './ContextDial';
 import SettingsPanel from './SettingsPanel';
 import PreferencesPanel from './PreferencesPanel';
 import { loadSettings, saveSettings, type ModelLoadSettings, type Settings } from './settings';
-import { fitToContext, MessageTooLongError, tidyForModel } from './trim';
+import { ContextError, conversationTokens, fitToContext, tidyForModel } from './trim';
 import Markdown from './Markdown';
 import { splitThinking } from './thinking';
 import { downloadBackup, readBackup } from './backup';
 import { applyAppearance, applyFonts, followSystemTheme } from './theme';
 import {
+  CloseIcon,
   ComposeIcon,
   EditIcon,
   GearIcon,
@@ -120,6 +122,15 @@ export default function App() {
   const [modelsVersion, setModelsVersion] = useState(0); // goes up after each swap
   const [incognito, setIncognito] = useState(false); // this chat is never saved
   const [leaveAction, setLeaveAction] = useState<(() => void) | null>(null); // waiting for "discard this incognito chat?"
+  const [queue, setQueue] = useState<{ id: string; text: string }[]>([]); // messages waiting to be sent, one at a time, each after the previous reply
+  const [queueExpanded, setQueueExpanded] = useState(false); // show every queued message, not just the first few
+  const [leavingItem, setLeavingItem] = useState<{ id: string; text: string; index: number } | null>(null); // a removed row, shrinking away
+  const [queuePaused, setQueuePaused] = useState(false); // after Stop or an error, the queue waits for you
+  const pendingName = useRef<{ modelId: string; chatId: string; userText: string; replyText: string } | null>(null); // a chat name still to be asked for
+
+  const [contextSize, setContextSize] = useState(0); // how many tokens the loaded model can hold (0 = unknown)
+  const [contextUsed, setContextUsed] = useState(0); // how many this chat uses
+  const counters = useRef<Record<string, (text: string) => Promise<number>>>({});
 
   const abortRef = useRef<AbortController | null>(null);
   const busy = useRef(false); // true from the moment a send starts, so double-clicks can't start two replies
@@ -156,6 +167,40 @@ export default function App() {
   useEffect(() => {
     applyFonts(settings.textFont, settings.codeFont);
   }, [settings.textFont, settings.codeFont]);
+
+  // The context dial: the loaded model's context length...
+  useEffect(() => {
+    if (status !== 'ready' || !model) {
+      setContextSize(0);
+      return;
+    }
+    let cancelled = false;
+    listLoaded()
+      .then((loaded) => !cancelled && setContextSize(loaded.find((m) => m.identifier === model)?.contextLength ?? 0))
+      .catch(() => !cancelled && setContextSize(0));
+    return () => {
+      cancelled = true;
+    };
+  }, [model, status, modelsVersion]);
+
+  // ...and how much of it this chat uses. Counted by the model's own tokenizer, once a reply has finished.
+  useEffect(() => {
+    if (!settings.showContext || !model || !contextSize || generating) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const count = (counters.current[model] ??= tokenCounter(model));
+      try {
+        const used = await conversationTokens(tidyForModel(messages), settings.systemPrompt, count);
+        if (!cancelled) setContextUsed(used);
+      } catch {
+        /* keep the last number */
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [messages, settings.systemPrompt, settings.showContext, model, contextSize, generating]);
 
   // Incognito gets its own colours (see the end of styles.css), so the whole page, not just .app, changes.
   useEffect(() => {
@@ -232,6 +277,8 @@ export default function App() {
       return false;
     }
 
+    setQueuePaused(false);
+
     // Save the conversation up to here right away (so an edit or regenerate cuts the saved copy too).
     const chatId = activeId ?? crypto.randomUUID();
     if (!incognito) setActiveId(chatId);
@@ -250,6 +297,7 @@ export default function App() {
     abortRef.current = controller;
     let reply = '';
     let trimmed = false;
+    let failed = false;
     let frame = 0;
     let startedAt = 0; // when the first piece arrived
     let lastAt = 0; // when the latest one did
@@ -297,7 +345,7 @@ export default function App() {
           }
         }
       } catch (e) {
-        if (e instanceof MessageTooLongError) throw e;
+        if (e instanceof ContextError) throw e;
         // Couldn't ask LM Studio about the context: send everything and let it cope.
       }
 
@@ -312,6 +360,7 @@ export default function App() {
       if (!controller.signal.aborted) {
         if (e instanceof ServerUnreachableError) setStatus('offline');
         setError(e instanceof Error ? e.message : String(e));
+        failed = true;
       }
     } finally {
       cancelAnimationFrame(frame);
@@ -325,11 +374,13 @@ export default function App() {
       abortRef.current = null;
       busy.current = false;
       inputRef.current?.focus();
+      // Stopping a reply, or an error, pauses the queue instead of sending the next message.
+      if (controller.signal.aborted || failed || !reply) setQueuePaused(true);
 
       // After the first reply of a saved chat, let the model write its name (if that's switched on).
       if (reply && !controller.signal.aborted && !incognito && settings.autoTitle && history.length === 1) {
         const answer = splitThinking(reply).answer;
-        if (answer) nameChat(currentModel, chatId, history[0].content, answer);
+        if (answer) pendingName.current = { modelId: currentModel, chatId, userText: history[0].content, replyText: answer };
       }
     }
   }
@@ -345,8 +396,49 @@ export default function App() {
   async function send() {
     const text = input.trim();
     if (!text) return;
-    if (await replyTo([...messages, { role: 'user', content: text }])) setInput('');
+    // While a reply is being written, the message waits in the queue.
+    if (busy.current) {
+      if (loadingRef.current) return;
+      setQueue((q) => [...q, { id: crypto.randomUUID(), text }]);
+      setInput('');
+      return;
+    }
+    setInput(''); // cleared at once, so a quick second Enter can't send or queue it again
+    if (!(await replyTo([...messages, { role: 'user', content: text }]))) setInput(text);
   }
+
+  // The model writes a chat's name only once it has nothing queued to answer, so it never holds up your messages.
+  useEffect(() => {
+    const p = pendingName.current;
+    if (!p || generating || busy.current || (queue.length > 0 && !queuePaused)) return;
+    pendingName.current = null;
+    nameChat(p.modelId, p.chatId, p.userText, p.replyText);
+  }, [generating, queue, queuePaused]);
+
+  useEffect(() => {
+    if (queue.length <= 3) setQueueExpanded(false);
+  }, [queue.length]);
+
+  function removeQueued(id: string) {
+    const index = queue.findIndex((item) => item.id === id);
+    if (index < 0) return;
+    setLeavingItem({ ...queue[index], index });
+    setQueue((q) => q.filter((item) => item.id !== id));
+    setTimeout(() => setLeavingItem((cur) => (cur?.id === id ? null : cur)), 200);
+  }
+
+  // Sends the queue one message at a time: the next goes only once the model has finished the previous reply.
+  useEffect(() => {
+    if (generating || busy.current || queuePaused || queue.length === 0 || loading) return;
+    const next = queue[0];
+    setQueue((q) => q.slice(1));
+    replyTo([...messages, { role: 'user', content: next.text }]).then((started) => {
+      if (!started) {
+        setQueue((q) => [next, ...q]);
+        setQueuePaused(true);
+      }
+    });
+  }, [generating, queuePaused, queue, loading, messages]);
 
   /** On a reply: replace it. On one of your messages: answer it again. Everything after is deleted. */
   function regenerate(index: number) {
@@ -483,6 +575,8 @@ export default function App() {
   }
 
   function openChat(id: string | null) {
+    setQueue([]);
+    setQueuePaused(false);
     setIncognito(false);
     setLeaveAction(null);
     setActiveId(id);
@@ -568,26 +662,81 @@ export default function App() {
   const sendTitle = `Send (${settings.ctrlEnterToSend ? 'Ctrl+Enter' : 'Enter'})`;
 
   const composer = (
-    <div className="inputbox">
+    <>
+      {(queue.length > 0 || leavingItem) && (
+        <div className={`queue${queuePaused ? ' paused' : ''}`} aria-label="Queued messages">
+          {queuePaused && queue.length > 0 && (
+            <div className="queue-head">
+              <span className="queue-status">
+                <span className="queue-dot" />
+                Paused
+              </span>
+              <span className="queue-actions">
+                <button className="small-button" onClick={() => setQueuePaused(false)} disabled={!!loading}>
+                  Resume
+                </button>
+                <button className="small-button" onClick={() => setQueue([])}>
+                  Clear
+                </button>
+              </span>
+            </div>
+          )}
+          {(() => {
+            const rows: { id: string; text: string; leaving?: boolean }[] = queue.map((item) => ({ ...item }));
+            if (leavingItem) rows.splice(Math.min(leavingItem.index, rows.length), 0, { ...leavingItem, leaving: true });
+            const shown = queueExpanded || rows.length <= 3 ? rows : rows.slice(0, 3);
+            return (
+              <>
+                {shown.map((row, i) => (
+                  <div key={row.id} className={`queue-item${i === 0 && !row.leaving ? ' next' : ''}${row.leaving ? ' leaving' : ''}`}>
+                    <span className="queue-num">{i + 1}</span>
+                    <span className="queue-text" title={row.text}>
+                      {row.text}
+                    </span>
+                    {i === 0 && !row.leaving && !queuePaused && <span className="queue-next">Up next</span>}
+                    {!row.leaving && (
+                      <button
+                        className="queue-remove"
+                        aria-label="Remove from queue"
+                        title="Remove from queue"
+                        onClick={() => removeQueued(row.id)}
+                      >
+                        <CloseIcon />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {rows.length > 3 && (
+                  <button className="queue-more" onClick={() => setQueueExpanded((v) => !v)}>
+                    {queueExpanded ? 'Show fewer' : `+${rows.length - 3} more`}
+                  </button>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      )}
+    <div className={`inputbox${queue.length > 0 ? ' has-queue' : ''}`}>
       <textarea
         ref={inputRef}
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={enterToSubmit(send, settings.ctrlEnterToSend)}
-        placeholder={loading ? `Loading ${loading.name}…` : 'Message'}
+        placeholder={loading ? `Loading ${loading.name}…` : generating ? 'Queue another message…' : 'Message'}
         rows={1}
         autoFocus
       />
-      {generating ? (
+      {generating && !input.trim() ? (
         <button className="icon-button" aria-label="Stop" title="Stop" onClick={() => abortRef.current?.abort()}>
           <StopIcon />
         </button>
       ) : (
-        <button className="icon-button" aria-label="Send" title={sendTitle} onClick={send} disabled={!!loading}>
+        <button className="icon-button" aria-label="Send" title={generating ? sendTitle.replace('Send', 'Queue') : sendTitle} onClick={send} disabled={!!loading}>
           <SendIcon />
         </button>
       )}
     </div>
+    </>
   );
 
   return (
@@ -604,6 +753,9 @@ export default function App() {
           {incognito && <span className="incognito-tag">Incognito</span>}
         </span>
         <span className="topbar-right">
+          {settings.showContext && status === 'ready' && contextSize > 0 && (
+            <ContextDial used={contextUsed} size={contextSize} overflow={settings.overflow} />
+          )}
           <ModelPicker
             dot={status}
             label={status === 'ready' ? (model ?? '') : STATUS_TEXT[status]}

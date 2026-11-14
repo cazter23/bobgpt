@@ -1,7 +1,7 @@
 // Settings kept in this browser's localStorage.
 import { CODE_FONT_IDS, TEXT_FONT_IDS, type CodeFont, type TextFont } from './fonts';
 
-export type OverflowPolicy = 'keep-start' | 'drop-oldest';
+export type OverflowPolicy = 'keep-start' | 'drop-oldest' | 'stop';
 export type Theme = 'system' | 'light' | 'dark';
 export type TextSize = 'small' | 'medium' | 'large';
 export type ThinkingView = 'collapsed' | 'open' | 'hidden';
@@ -30,6 +30,7 @@ export type Settings = {
   ctrlEnterToSend: boolean; // false: Enter sends. true: Ctrl+Enter sends and Enter adds a new line
   autoTitle: boolean; // let the loaded model write chat names
   showSpeed: boolean; // tokens per second under each reply
+  showContext: boolean; // the context dial in the top bar
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -48,6 +49,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ctrlEnterToSend: false,
   autoTitle: true,
   showSpeed: false,
+  showContext: true,
 };
 
 const KEY = 'homegpt-settings';
@@ -61,7 +63,7 @@ export function loadSettings(): Settings {
       systemPrompt: typeof s.systemPrompt === 'string' ? s.systemPrompt : DEFAULT_SETTINGS.systemPrompt,
       temperature: isNumber(s.temperature) ? s.temperature : DEFAULT_SETTINGS.temperature,
       maxTokens: isNumber(s.maxTokens) && s.maxTokens > 0 ? s.maxTokens : null,
-      overflow: s.overflow === 'drop-oldest' ? 'drop-oldest' : 'keep-start',
+      overflow: s.overflow === 'drop-oldest' || s.overflow === 'stop' ? s.overflow : 'keep-start',
       models: s.models && typeof s.models === 'object' ? s.models : {},
       theme: s.theme === 'light' || s.theme === 'dark' ? s.theme : 'system',
       textSize: s.textSize === 'small' || s.textSize === 'large' ? s.textSize : 'medium',
@@ -73,6 +75,7 @@ export function loadSettings(): Settings {
       ctrlEnterToSend: s.ctrlEnterToSend === true,
       autoTitle: s.autoTitle !== false,
       showSpeed: s.showSpeed === true,
+      showContext: s.showContext !== false,
     };
   } catch {
     return DEFAULT_SETTINGS;

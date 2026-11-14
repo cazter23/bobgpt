@@ -761,3 +761,67 @@ body::before {
 .danger-button { border: none; background: #c9443a; color: #fff; font-weight: 600; }
 .danger-button:hover { background: #d9534a; }
 .danger-button:focus-visible { outline: 2px solid #c9443a; outline-offset: 2px; }
+
+/* Context dial (top bar): a ring that fills as the chat uses the model's context; hover for a bar and the numbers */
+.ctx { position: relative; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 8px; outline: none; cursor: default; }
+.ctx:hover, .ctx:focus-visible { background: var(--subtle); }
+.ctx svg { display: block; }
+.ctx-track { fill: none; stroke: var(--muted); stroke-width: 3; opacity: 0.3; }
+.ctx-fill { fill: none; stroke: var(--accent-1); stroke-width: 3; stroke-linecap: round; transition: stroke-dasharray 0.4s ease, stroke 0.2s; }
+.ctx.high .ctx-fill { stroke: var(--warn); }
+.ctx.full .ctx-fill { stroke: var(--danger); }
+.ctx-pop {
+  display: none; position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; width: 240px; padding: 12px 14px;
+  background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18); font-size: 13px; text-align: left; cursor: default;
+}
+.ctx:hover .ctx-pop, .ctx:focus-visible .ctx-pop { display: block; animation: rise 0.12s ease-out; }
+.ctx-title { margin-bottom: 8px; font-weight: 600; }
+.ctx-bar { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.ctx-bar div { height: 100%; border-radius: 3px; background: var(--accent-1); transition: width 0.4s ease; }
+.ctx.high .ctx-bar div { background: var(--warn); }
+.ctx.full .ctx-bar div { background: var(--danger); }
+.ctx-numbers { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ctx-note { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+
+/* Queued messages: a tray attached to the top of the input box. Sent one at a time. */
+.queue {
+  max-height: 210px; overflow-y: auto;
+  border: 1px solid var(--border); border-bottom: none; border-radius: 12px 12px 0 0; background: var(--surface);
+}
+.inputbox.has-queue { border-top-left-radius: 0; border-top-right-radius: 0; }
+.queue-item, .queue-head, .queue-more { display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 12px; font-size: 13px; }
+.queue-item { max-height: 44px; overflow: hidden; animation: queue-in 0.18s ease-out; }
+.queue-item + .queue-item, .queue-head + .queue-item, .queue-item + .queue-more { border-top: 1px solid var(--border); }
+@keyframes queue-in { from { opacity: 0; transform: translateY(4px); } }
+.queue-item.leaving { pointer-events: none; animation: queue-out 0.18s ease forwards; }
+@keyframes queue-out { from { max-height: 44px; } to { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; border-top-width: 0; } }
+.queue-num {
+  display: grid; place-items: center; flex: none; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--subtle); color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums;
+}
+.queue-item.next .queue-num { background: var(--active-bg); color: var(--accent-1); }
+.queue-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.queue-item.next .queue-text { color: var(--text); }
+.queue-next { flex: none; color: var(--accent-1); font-size: 11px; font-weight: 600; }
+.queue-remove {
+  display: flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; padding: 0;
+  border: none; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; opacity: 0;
+}
+.queue-item:hover .queue-remove, .queue-remove:focus-visible { opacity: 1; }
+@media (hover: none) { .queue-remove { opacity: 1; } }
+.queue-remove:hover { background: var(--subtle); color: var(--text); }
+.queue-remove svg { width: 14px; height: 14px; }
+.queue-head { justify-content: space-between; padding-top: 7px; padding-bottom: 7px; color: var(--muted); font-size: 12px; }
+.queue-status { display: flex; align-items: center; gap: 8px; }
+.queue-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+.queue-actions { display: flex; gap: 6px; }
+.small-button {
+  padding: 3px 10px; border: 1px solid var(--border); border-radius: 6px;
+  background: transparent; color: var(--text); font: inherit; font-size: 12px; cursor: pointer;
+}
+.small-button:hover:not(:disabled) { background: var(--subtle); }
+.small-button:disabled { opacity: 0.5; cursor: default; }
+.queue.paused .queue-item { opacity: 0.6; }
+.queue-more { width: 100%; border: none; background: transparent; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.queue-more:hover { color: var(--text); background: var(--subtle); }

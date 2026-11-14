@@ -198,6 +198,13 @@ export default function PreferencesPanel({ settings, onChange, onClose, chatCoun
           </label>
 
           <label className="choice">
+            <input type="checkbox" checked={settings.showContext} onChange={(e) => set({ showContext: e.target.checked })} />
+            <span>
+              Show context dial <span className="hint">How full the model's memory is, in the top bar</span>
+            </span>
+          </label>
+
+          <label className="choice">
             <input type="checkbox" checked={settings.showSpeed} onChange={(e) => set({ showSpeed: e.target.checked })} />
             <span>
               Show speed under replies <span className="hint">Tokens per second</span>

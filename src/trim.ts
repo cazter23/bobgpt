@@ -6,7 +6,30 @@ import type { OverflowPolicy } from './settings';
 /** Rough extra tokens each message costs for the chat template's role markers. */
 const PER_MESSAGE_OVERHEAD = 8;
 
-export class MessageTooLongError extends Error {
+/** How many tokens a chat takes up in the model's context (with the system prompt, if any). */
+export async function conversationTokens(
+  history: ChatMessage[],
+  systemPrompt: string,
+  count: (text: string) => Promise<number>,
+): Promise<number> {
+  const costs = await Promise.all(history.map(async (m) => (await count(m.content)) + PER_MESSAGE_OVERHEAD));
+  const system = systemPrompt.trim() ? (await count(systemPrompt)) + PER_MESSAGE_OVERHEAD : 0;
+  return costs.reduce((a, b) => a + b, system);
+}
+
+/** The chat can't be sent as it is: it doesn't fit, and it can't be shortened. */
+export class ContextError extends Error {}
+
+export class ContextFullError extends ContextError {
+  constructor() {
+    super(
+      "This chat has reached the model's context limit, so nothing was sent. " +
+        'Start a new chat, or change Context overflow in settings.',
+    );
+  }
+}
+
+export class MessageTooLongError extends ContextError {
   constructor(tokens: number, room: number) {
     super(
       `That message is about ${tokens} tokens, but only ${room} fit in the model's context. ` +
@@ -36,6 +59,7 @@ export function tidyForModel(history: ChatMessage[]): ChatMessage[] {
 
 /**
  * `history` ends with the message being answered. `budget` is how many tokens the history may use.
+ * - stop: sends nothing if the chat doesn't fit.
  * - drop-oldest: keeps the newest messages that fit.
  * - keep-start: keeps your first message and its reply, plus the newest messages that fit.
  * The result always starts with a user message and keeps roles alternating, because some
@@ -50,6 +74,7 @@ export async function fitToContext(
   const cost = await Promise.all(history.map(async (m) => (await count(m.content)) + PER_MESSAGE_OVERHEAD));
   const total = cost.reduce((a, b) => a + b, 0);
   if (total <= budget) return { messages: history, trimmed: false };
+  if (policy === 'stop') throw new ContextFullError();
 
   const last = history.length - 1;
   if (cost[last] > budget) throw new MessageTooLongError(cost[last], Math.max(budget, 0));

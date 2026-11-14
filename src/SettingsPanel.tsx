@@ -117,11 +117,12 @@ export default function SettingsPanel({
           </label>
 
           <fieldset className="field">
-            <legend className="field-label">When a chat is too long for the context</legend>
+            <legend className="field-label">Context overflow</legend>
             {(
               [
-                ['keep-start', 'Keep the start and the recent messages', 'Leaves out the middle'],
-                ['drop-oldest', 'Drop the oldest messages', 'Keeps only the newest'],
+                ['keep-start', 'Truncate middle', 'Keeps the start and the newest messages'],
+                ['drop-oldest', 'Rolling window', 'Drops the oldest messages'],
+                ['stop', 'Stop at limit', 'Sends nothing once the chat is full'],
               ] as [OverflowPolicy, string, string][]
             ).map(([value, title, hint]) => (
               <label key={value} className="choice">
