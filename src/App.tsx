@@ -643,6 +643,21 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [sidebarSize]);
 
+  // Esc stops a reply that is being written, like the Stop button, unless Esc was meant for something else:
+  // Settings or Preferences closing, or anything that marks the key as handled (a ⋯ menu, a confirmation
+  // panel, the model list, a rename box, or the search box clearing its text).
+  useEffect(() => {
+    if (!generating) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing) return;
+      if (settingsOpen || prefsOpen || leaveAction) return;
+      e.preventDefault();
+      abortRef.current?.abort();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [generating, settingsOpen, prefsOpen, leaveAction]);
+
   // After opening a chat from a search result, scroll to the first matching message and flash it.
   useEffect(() => {
     if (!jump || activeId !== jump.chatId || messages.length === 0) return;
@@ -1081,7 +1096,7 @@ export default function App() {
         autoFocus
       />
       {generating && !input.trim() && attachments.length === 0 ? (
-        <button className="icon-button" aria-label="Stop" title="Stop" onClick={() => abortRef.current?.abort()}>
+        <button className="icon-button" aria-label="Stop" title="Stop (Esc)" onClick={() => abortRef.current?.abort()}>
           <StopIcon />
         </button>
       ) : (

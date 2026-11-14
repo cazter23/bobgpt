@@ -147,7 +147,13 @@ export default function Sidebar(props: Props) {
               ref={searchRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Escape' && setQuery('')}
+              onKeyDown={(e) => {
+                // Marked as handled only when there was something to clear, so an empty box leaves Esc to stop a reply.
+                if (e.key === 'Escape' && query) {
+                  e.preventDefault();
+                  setQuery('');
+                }
+              }}
               placeholder="Search chats"
               aria-label="Search chats"
             />
@@ -236,7 +242,10 @@ function useRename(current: string, onSave: (value: string) => void, label: stri
     onChange: (e: { target: { value: string } }) => setDraft(e.target.value),
     onKeyDown: (e: KeyboardEvent<HTMLInputElement>) => {
       if (e.key === 'Enter' && !e.nativeEvent.isComposing) finish(true);
-      else if (e.key === 'Escape') finish(false);
+      else if (e.key === 'Escape') {
+        e.preventDefault(); // handled here, so it doesn't also stop a reply
+        finish(false);
+      }
     },
     onBlur: () => finish(true),
     onFocus: (e: { currentTarget: HTMLInputElement }) => e.currentTarget.select(),
