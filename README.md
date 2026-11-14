@@ -25,6 +25,23 @@ Open http://localhost:5173 in Edge or Chrome.
 - `npm install` is only needed the first time, or after dependencies change.
 - Leave the terminal open while you use the app; press `Ctrl+C` in it to stop.
 
+## Everyday use: the built app
+
+`npm run dev` is for working on the code. For everyday use, run the built version: it does the same thing with far less memory (about 85 MB instead of about 300 MB).
+
+- **Double-click `start-bobgpt.bat`.** It builds the app first if the code has changed, starts the server in the background (no window) and opens http://localhost:5173.
+- **`stop-bobgpt.bat`** stops that server (to free its memory, or to run `npm run dev`).
+- **At login:** a shortcut called "BobGPT server" in your Windows Startup folder (press `Win+R`, type `shell:startup`) starts the server when you log in, without opening a browser. Delete the shortcut to turn that off.
+- `npm run app` does the same from a terminal, with the server running in it.
+
+The built app and `npm run dev` both use port 5173, and your saved chats belong to that address, so only one can run at a time. Before using `npm run dev`, run `stop-bobgpt.bat`; otherwise the dev server moves to another port and your chats won't appear there.
+
+## Installing it as an app
+
+With the built app running, open http://localhost:5173 in Edge or Chrome and use the install button at the end of the address bar (or ⋯ → Apps → Install BobGPT). It then opens in its own window with the BobGPT icon, no address bar, and can be pinned to the taskbar.
+
+The installed app keeps a copy of its own files, so its window opens even when the server isn't running; LM Studio still has to be running to chat. When the server is running, a rebuilt app arrives the next time you open it. The copy holds only the app's files, never your chats, which stay in the browser as before.
+
 ## Tests
 
 ```
@@ -33,7 +50,7 @@ npm test
 
 runs the automated tests in a couple of seconds. They never contact LM Studio or load a model: a pretend LM Studio is used instead. `npm run check` runs the type check, the tests and a build together; run it before committing.
 
-- `tests/*.test.ts` check the logic on its own: trimming a long chat, search, saved-data loading, settings, backups, Markdown export, stored images, LM Studio replies, themes and fonts.
+- `tests/*.test.ts` check the logic on its own: trimming a long chat, search, saved-data loading, settings, backups, Markdown export, stored images, LM Studio replies, themes and fonts, and the installable-app files (manifest, icons, and the service worker, which must leave LM Studio requests alone).
 - `tests/app.test.tsx` runs the whole app against the pretend LM Studio (`tests/fakeLmStudio.ts`): the message queue sending one at a time, Stop and Resume, incognito chats never being saved, Stop at limit, Truncate middle, error messages, and search.
 
 ## Using it

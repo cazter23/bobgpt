@@ -15,6 +15,12 @@ const saved = loadSettings();
 applyAppearance(saved.theme, saved.textSize, saved.colour, saved.customColour);
 applyFonts(saved.textFont, saved.codeFont);
 
+// The built app can be installed and opens without its server running (see public/sw.js). Not in development,
+// where a saved copy of the files would get in the way of live reloading.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
