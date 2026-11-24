@@ -13,6 +13,7 @@ export type Colour = (typeof COLOURS)[number];
 export type ModelLoadSettings = {
   contextLength?: number;
   gpuOffload?: number; // 0 to 1
+  keepInMemory?: boolean; // keep the whole model in memory (RAM); off unless chosen
 };
 
 export type Settings = {

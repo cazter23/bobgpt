@@ -37,6 +37,7 @@ export type LoadedModel = {
 export type LoadOptions = {
   contextLength?: number;
   gpuOffload?: number; // 0 to 1
+  keepInMemory?: boolean; // off unless true (LM Studio's own default is on)
 };
 
 /** Downloaded chat models (embedding models are not included). */
@@ -75,7 +76,9 @@ export function swapModel(
 ): Promise<void> {
   return sdk(async (c) => {
     for (const model of await c.llm.listLoaded()) await model.unload();
-    const config: { contextLength?: number; gpu?: { ratio: number } } = {};
+    const config: { contextLength?: number; gpu?: { ratio: number }; keepModelInMemory: boolean } = {
+      keepModelInMemory: options.keepInMemory === true,
+    };
     if (options.contextLength) config.contextLength = options.contextLength;
     if (options.gpuOffload !== undefined) config.gpu = { ratio: options.gpuOffload };
     await c.llm.load(key, { config, onProgress, signal });

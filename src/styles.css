@@ -359,6 +359,12 @@ body {
   cursor: pointer;
 }
 .chat-title:disabled { cursor: default; }
+/* A reply is being written in this chat (you may be looking at another one). */
+.writing-dot {
+  position: absolute; right: 36px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%;
+  background: var(--accent-1); animation: writing-pulse 1.4s ease-in-out infinite;
+}
+@keyframes writing-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
 .rename-input {
   flex: 1; min-width: 0; margin: 3px;
   padding: 5px 8px;
@@ -592,7 +598,7 @@ legend.field-label { display: block; margin-bottom: 6px; }
   padding: 2px 8px; border: 1px dashed var(--accent-1); border-radius: 999px;
   color: var(--accent-1); font-size: 12px;
 }
-.incognito-note, .folder-note { margin: -12px 0 20px; text-align: center; color: var(--muted); font-size: 14px; }
+.incognito-note { margin: -12px 0 20px; text-align: center; color: var(--muted); font-size: 14px; }
 .app.incognito .inputbox { border-style: dashed; border-color: var(--accent-1); }
 .confirm-backdrop {
   position: fixed; inset: 0; z-index: 50;

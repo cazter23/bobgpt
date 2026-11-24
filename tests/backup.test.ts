@@ -44,7 +44,7 @@ describe('readBackup', () => {
         backup({
           chats: [
             { id: 'a', title: 'Good', messages: [{ role: 'user', content: 'x' }, { role: 'robot', content: 'y' }] },
-            { id: 'b', title: 'No messages', messages: [] },
+            { id: 'b', title: 'Unnamed chat', messages: [] },
             { id: 'c', messages: [] },
             'junk',
           ],

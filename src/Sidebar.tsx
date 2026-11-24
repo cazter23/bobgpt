@@ -18,7 +18,8 @@ type Props = {
   chats: Chat[];
   folders: Folder[];
   activeId: string | null;
-  locked: boolean; // true while a reply is being written
+  writingId: string | null; // the chat a reply is being written in (it can't be deleted meanwhile)
+  locked: boolean; // an incognito chat is being written: it can't be left
   size: SidebarSize;
   onSize: (size: SidebarSize) => void;
   onNew: () => void;
@@ -106,6 +107,7 @@ export default function Sidebar(props: Props) {
         chat={chat}
         active={chat.id === activeId}
         locked={locked}
+        writing={chat.id === props.writingId}
         dragged={chat.id === draggedChat}
         onOpen={() => props.onOpen(chat.id)}
         onRename={(title) => props.onRename(chat.id, title)}
@@ -262,7 +264,7 @@ function useRename(current: string, onSave: (value: string) => void, label: stri
 
 /**
  * A row's ⋯ menu: New chat in folder (folders only), Rename, Export as Markdown (chats only) and Delete. Delete first
- * asks in a panel in the middle of the window. `disabled` (while a reply is written) turns off Rename and Delete.
+ * asks in a panel in the middle of the window. `deleteDisabled` (the chat a reply is being written in) turns off Delete.
  */
 function RowActions(props: {
   name: string; // the chat's or folder's name
@@ -270,18 +272,18 @@ function RowActions(props: {
   onRename: () => void;
   onExport?: () => void;
   onNewChat?: () => void; // folders: start a new chat inside it
-  newChatDisabled?: boolean; // while a reply is being written, as the New chat button is
+  newChatDisabled?: boolean; // while an incognito chat is being written, as the New chat button is
   onDelete: () => void;
-  disabled?: boolean;
+  deleteDisabled?: boolean;
 }) {
   const [confirming, setConfirming] = useState(false);
 
   const items: MenuItem[] = [
     ...(props.onNewChat ? [{ label: 'New chat in folder', icon: <PlusIcon />, onSelect: props.onNewChat, disabled: props.newChatDisabled }] : []),
-    { label: 'Rename', icon: <EditIcon />, onSelect: props.onRename, disabled: props.disabled },
+    { label: 'Rename', icon: <EditIcon />, onSelect: props.onRename },
     ...(props.onExport ? [{ label: 'Export as Markdown', icon: <DownloadIcon />, onSelect: props.onExport }] : []),
     // returnFocus: back to ⋯, so that's where the focus goes again if the panel is cancelled
-    { label: 'Delete', icon: <TrashIcon />, onSelect: () => setConfirming(true), disabled: props.disabled, danger: true, returnFocus: true },
+    { label: 'Delete', icon: <TrashIcon />, onSelect: () => setConfirming(true), disabled: props.deleteDisabled, danger: true, returnFocus: true },
   ];
 
   return (
@@ -318,6 +320,7 @@ type RowProps = {
   chat: Chat;
   active: boolean;
   locked: boolean;
+  writing: boolean; // a reply is being written in this chat
   dragged: boolean;
   onOpen: () => void;
   onRename: (title: string) => void;
@@ -326,12 +329,12 @@ type RowProps = {
   onDragEnd: () => void;
 };
 
-function ChatRow({ chat, active, locked, dragged, onOpen, onRename, onDelete, onDragStart, onDragEnd }: RowProps) {
+function ChatRow({ chat, active, locked, writing, dragged, onOpen, onRename, onDelete, onDragStart, onDragEnd }: RowProps) {
   const rename = useRename(chat.title, onRename, 'Chat name');
 
   return (
     <li
-      className={`chat-row${active ? ' active' : ''}${dragged ? ' dragged' : ''}`}
+      className={`chat-row${active ? ' active' : ''}${writing ? ' writing' : ''}${dragged ? ' dragged' : ''}`}
       draggable={!locked && !rename.renaming}
       onDragStart={(e) => {
         e.dataTransfer.setData('text/plain', chat.id);
@@ -345,10 +348,11 @@ function ChatRow({ chat, active, locked, dragged, onOpen, onRename, onDelete, on
       ) : (
         <button className="chat-title" onClick={onOpen} disabled={locked} title={chat.title}>
           {chat.title}
+          {writing && <span className="writing-dot" role="img" aria-label="Writing a reply" title="Writing a reply" />}
         </button>
       )}
       {!rename.renaming && (
-        <RowActions name={chat.title} kind="chat" onRename={rename.start} onExport={() => downloadChatMarkdown(chat)} onDelete={onDelete} disabled={locked} />
+        <RowActions name={chat.title} kind="chat" onRename={rename.start} onExport={() => downloadChatMarkdown(chat)} onDelete={onDelete} deleteDisabled={locked || writing} />
       )}
     </li>
   );

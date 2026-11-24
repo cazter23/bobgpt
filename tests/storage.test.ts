@@ -46,9 +46,14 @@ describe('cleanMessage', () => {
 });
 
 describe('cleanChat', () => {
+  it('keeps an empty chat that was given a name, such as one started from a folder', async () => {
+    const { cleanChat } = await fresh();
+    expect(cleanChat({ ...goodChat, title: 'Ideas', messages: [] })?.messages).toEqual([]);
+  });
+
   it('drops chats with nothing valid in them', async () => {
     const { cleanChat } = await fresh();
-    expect(cleanChat({ ...goodChat, messages: [] })).toBeNull();
+    expect(cleanChat({ ...goodChat, title: 'Unnamed chat', messages: [] })).toBeNull();
     expect(cleanChat({ ...goodChat, messages: [{ role: 'bogus' }] })).toBeNull();
     expect(cleanChat({ id: 1, title: 'x', messages: [] })).toBeNull();
     expect(cleanChat(null)).toBeNull();

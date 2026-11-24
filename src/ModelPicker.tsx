@@ -36,6 +36,7 @@ export default function ModelPicker({ dot, label, mono, loading,
   const [pending, setPending] = useState<ModelOption | null>(null);
   const [contextDraft, setContextDraft] = useState('');
   const [gpuDraft, setGpuDraft] = useState<number | undefined>(undefined); // 0 to 1; undefined = LM Studio's default
+  const [keepDraft, setKeepDraft] = useState(false); // keep the model in memory
   const [choices, setChoices] = useState<Choices | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -80,6 +81,7 @@ export default function ModelPicker({ dot, label, mono, loading,
     const saved = modelSettings[model.key] ?? {};
     setContextDraft(saved.contextLength ? String(saved.contextLength) : '');
     setGpuDraft(saved.gpuOffload);
+    setKeepDraft(saved.keepInMemory === true);
     setPending(model);
   }
 
@@ -90,7 +92,7 @@ export default function ModelPicker({ dot, label, mono, loading,
       contextDraft.trim() && typed > 0 ? Math.min(pending.maxContext, Math.max(MIN_CONTEXT, Math.floor(typed))) : undefined;
     const model = pending;
     setOpen(false);
-    onSelect(model, { contextLength, gpuOffload: gpuDraft });
+    onSelect(model, { contextLength, gpuOffload: gpuDraft, keepInMemory: keepDraft });
   }
 
   return (
@@ -166,6 +168,13 @@ export default function ModelPicker({ dot, label, mono, loading,
                     Use LM Studio's default
                   </button>
                 )}
+              </label>
+
+              <label className="choice">
+                <input type="checkbox" checked={keepDraft} onChange={(e) => setKeepDraft(e.target.checked)} />
+                <span>
+                  Keep model in memory <span className="hint">Reserves memory for the whole model. Off lets your computer swap it out.</span>
+                </span>
               </label>
 
               <div className="load-actions">

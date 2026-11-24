@@ -22,6 +22,9 @@ export const CHATS_KEY = 'homegpt-chats';
 export const FOLDERS_KEY = 'homegpt-folders';
 const SIDEBAR_KEY = 'homegpt-sidebar';
 
+/** The name of a chat started from a folder's menu, until you rename it or send a first message. */
+export const UNNAMED_CHAT = 'Unnamed chat';
+
 const isString = (v: unknown): v is string => typeof v === 'string';
 
 /**
@@ -55,7 +58,8 @@ export function cleanChat(
   const c = value as Record<string, unknown>;
   if (!isString(c.id) || !isString(c.title) || !Array.isArray(c.messages)) return null;
   const messages = c.messages.map((m) => cleanMessage(m, check.hasImage)).filter((m): m is ChatMessage => !!m);
-  if (messages.length === 0) return null;
+  // A chat with nothing in it is kept only if it was empty when saved and has been given a name of its own.
+  if (messages.length === 0 && (c.messages.length > 0 || c.title === UNNAMED_CHAT)) return null;
   // Each message in a chat needs its own id (a hand-edited file might repeat one).
   const seen = new Set<string>();
   for (const m of messages) {

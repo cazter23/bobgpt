@@ -203,6 +203,21 @@ export default function SettingsPanel({
                 )}
               </label>
 
+              <label className="choice">
+                <input
+                  type="checkbox"
+                  checked={saved.keepInMemory === true}
+                  onChange={(e) => {
+                    setGpuTouched(true);
+                    setModel(current.model.key, { keepInMemory: e.target.checked });
+                  }}
+                  disabled={busy}
+                />
+                <span>
+                  Keep model in memory <span className="hint">Reserves memory for the whole model. Off lets your computer swap it out.</span>
+                </span>
+              </label>
+
               {(contextChanged || gpuTouched) && (
                 <button className="reload-button" onClick={reload} disabled={busy}>
                   Reload model

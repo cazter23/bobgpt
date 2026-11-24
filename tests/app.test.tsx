@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../src/App';
+import * as lmstudio from '../src/lmstudio';
 import { installFakeServer, type FakeServer } from './fakeLmStudio';
 import { bot, chat, user as userMsg } from './helpers';
 
@@ -519,21 +520,25 @@ describe('keyboard shortcuts', () => {
     expect(screen.getByText('reply alpha')).toBeTruthy();
   });
 
-  it('is ignored while a reply is being written (the buttons are off then too), but "/" still works', async () => {
-    start({ chats: [alpha] });
+  it('while a reply is being written, Alt+N and Alt+Up/Down still move between chats, but Alt+I and Alt+C are ignored, and "/" still works', async () => {
+    start({ chats: [alpha, beta] });
     await typist.click(await screen.findByText('Alpha'));
     await screen.findByText('reply alpha');
     await send('another question');
     await requestArrives(1);
 
-    alt('KeyN');
-    alt('ArrowDown');
+    alt('KeyI');
     await new Promise((r) => setTimeout(r, 50));
-    expect(screen.getByText('another question')).toBeTruthy(); // still in this chat
+    expect(document.documentElement.hasAttribute('data-incognito')).toBe(false);
+
+    alt('ArrowDown');
+    expect(await screen.findByText('reply beta')).toBeTruthy(); // the reply carries on in Alpha
+    alt('KeyN');
+    await waitFor(() => expect(greeting()).not.toBeNull());
 
     (document.activeElement as HTMLElement | null)?.blur();
     press({ key: '/', code: 'Slash' });
-    await waitFor(() => expect(document.activeElement).toBe(messageBox())); // so you can queue another message
+    await waitFor(() => expect(document.activeElement).toBe(messageBox()));
   });
 });
 
@@ -555,7 +560,18 @@ describe('New chat in folder', () => {
     await typist.click(within(menu).getByRole('menuitem', { name: 'New chat in folder' }));
   };
   const savedChats = () => JSON.parse(localStorage.getItem('homegpt-chats') ?? '[]');
-  const note = () => document.querySelector('.folder-note')?.textContent ?? null;
+  const inFolder = (name: string) => [...document.querySelectorAll(`.folder:has(button[title="${name}"]) .chat-title`)].map((e) => e.textContent);
+  const rename = async (from: string, to: string) => {
+    await typist.click(await screen.findByRole('button', { name: `Options for chat "${from}"` }));
+    await typist.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Rename' }));
+    await typist.keyboard(`${to}{Enter}`);
+  };
+  const reply = async (text: string, n = 1) => {
+    await requestArrives(n);
+    server.replies[n - 1].say(text);
+    server.replies[n - 1].finish();
+    await screen.findByText(text);
+  };
 
   it("is the first choice in a folder's menu, and is not in a chat's menu", async () => {
     seedFolders();
@@ -570,46 +586,78 @@ describe('New chat in folder', () => {
     expect(chatItems).not.toContain('New chat in folder');
   });
 
-  it('opens an empty chat that says where it will be saved, and saves it in that folder once you send something', async () => {
+  it('puts an "Unnamed chat" in the folder at once, before anything is sent', async () => {
     seedFolders();
     start();
     await chooseNewChatIn('Work');
-    expect(note()).toBe('This chat will be saved in “Work”.');
+    expect(inFolder('Work')).toEqual(['Unnamed chat']);
     expect(document.querySelector('.greeting')).not.toBeNull();
-
-    await send('Hello there');
-    await requestArrives(1);
-    server.replies[0].say('Hi!');
-    server.replies[0].finish();
-    await screen.findByText('Hi!');
-
-    await waitFor(() => expect(savedChats()[0].folderId).toBe('f1'));
-    const inFolder = document.querySelector('.folder-chats') as HTMLElement;
-    expect(within(inFolder).getByText('Hello there')).toBeTruthy();
+    expect(document.querySelector('.chat-row.active .chat-title')?.textContent).toBe('Unnamed chat');
   });
 
-  it('opens a collapsed folder, so you can see where the chat will go', async () => {
+  it("is named after your first message, if you didn't name it, and stays in the folder", async () => {
+    seedFolders();
+    start();
+    await chooseNewChatIn('Work');
+    await send('Hello there');
+    await reply('Hi!');
+    await waitFor(() => expect(inFolder('Work')).toEqual(['Hello there']));
+    expect(savedChats()).toHaveLength(1);
+    expect(savedChats()[0].folderId).toBe('f1');
+  });
+
+  it('can be named before you send anything, and keeps that name', async () => {
+    seedFolders();
+    start();
+    await chooseNewChatIn('Work');
+    await rename('Unnamed chat', 'Trip plans');
+    expect(inFolder('Work')).toEqual(['Trip plans']);
+    await send('Where should we go?');
+    await reply('Lisbon.');
+    await waitFor(() => expect(savedChats()[0].messages).toHaveLength(2));
+    expect(inFolder('Work')).toEqual(['Trip plans']);
+  });
+
+  it('opens a collapsed folder, so you can see the new chat', async () => {
     seedFolders();
     start();
     const title = await screen.findByTitle('Play'); // the folder's own button (the ⋯ button has a longer name)
     expect(title.getAttribute('aria-expanded')).toBe('false');
     await chooseNewChatIn('Play');
     await waitFor(() => expect(screen.getByTitle('Play').getAttribute('aria-expanded')).toBe('true'));
+    expect(inFolder('Play')).toEqual(['Unnamed chat']);
   });
 
-  it('only applies to that one new chat: starting an ordinary new chat afterwards saves it outside any folder', async () => {
+  it('is thrown away if you leave it still empty and unnamed', async () => {
     seedFolders();
     start();
     await chooseNewChatIn('Work');
-    expect(note()).not.toBeNull();
+    expect(inFolder('Work')).toEqual(['Unnamed chat']);
     await typist.click(topbarButton('New chat'));
-    await waitFor(() => expect(note()).toBeNull());
+    await waitFor(() => expect(inFolder('Work')).toEqual([]));
+    expect(savedChats()).toHaveLength(0);
+  });
 
+  it('is kept if you named it, even when you leave it empty, and is still there after a restart', async () => {
+    seedFolders();
+    const { unmount } = start();
+    await chooseNewChatIn('Work');
+    await rename('Unnamed chat', 'Later');
+    await typist.click(topbarButton('New chat'));
+    expect(inFolder('Work')).toEqual(['Later']);
+    await waitFor(() => expect(savedChats().map((c: { title: string }) => c.title)).toEqual(['Later']));
+    unmount();
+    start();
+    await waitFor(() => expect(inFolder('Work')).toEqual(['Later']));
+  });
+
+  it('a new chat after it, from the ordinary button, is saved outside any folder', async () => {
+    seedFolders();
+    start();
+    await chooseNewChatIn('Work');
+    await typist.click(topbarButton('New chat'));
     await send('Loose chat');
-    await requestArrives(1);
-    server.replies[0].say('ok');
-    server.replies[0].finish();
-    await screen.findByText('ok');
+    await reply('ok');
     await waitFor(() => expect(savedChats()).toHaveLength(1));
     expect(savedChats()[0].folderId ?? null).toBeNull();
   });
@@ -619,45 +667,27 @@ describe('New chat in folder', () => {
     start();
     await chooseNewChatIn('Work');
     await send('first');
-    await requestArrives(1);
-    server.replies[0].say('one');
-    server.replies[0].finish();
-    await screen.findByText('one');
+    await reply('one');
     await send('second');
-    await requestArrives(2);
-    server.replies[1].say('two');
-    server.replies[1].finish();
-    await screen.findByText('two');
+    await reply('two', 2);
     await waitFor(() => expect(savedChats()[0].messages).toHaveLength(4));
     expect(savedChats()).toHaveLength(1);
     expect(savedChats()[0].folderId).toBe('f1');
   });
 
-  it('saves the chat outside any folder if the folder is deleted before you send anything', async () => {
+  it('goes to the main list if the folder is deleted before you send anything', async () => {
     seedFolders();
     start();
     await chooseNewChatIn('Work');
     const menu = await openFolderMenu('Work');
     await typist.click(within(menu).getByRole('menuitem', { name: 'Delete' }));
     await typist.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete' }));
-    await waitFor(() => expect(note()).toBeNull());
+    await waitFor(() => expect(screen.queryByTitle('Work')).toBeNull());
 
     await send('after the folder went');
-    await requestArrives(1);
-    server.replies[0].say('ok');
-    server.replies[0].finish();
-    await screen.findByText('ok');
+    await reply('ok');
     await waitFor(() => expect(savedChats()).toHaveLength(1));
     expect(savedChats()[0].folderId ?? null).toBeNull();
-  });
-
-  it('is switched off while a reply is being written, like the New chat button', async () => {
-    seedFolders();
-    start();
-    await send('question');
-    await requestArrives(1);
-    const menu = await openFolderMenu('Work');
-    expect((within(menu).getByRole('menuitem', { name: 'New chat in folder' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('asks before leaving an incognito chat that has messages, and only then opens the folder chat', async () => {
@@ -665,16 +695,381 @@ describe('New chat in folder', () => {
     start();
     await typist.click(button('Incognito chat'));
     await send('secret');
-    await requestArrives(1);
-    server.replies[0].say('shh');
-    server.replies[0].finish();
-    await screen.findByText('shh');
+    await reply('shh');
 
     await chooseNewChatIn('Work');
     const dialog = await screen.findByRole('alertdialog');
-    expect(note()).toBeNull(); // nothing has changed yet
+    expect(inFolder('Work')).toEqual([]); // nothing has changed yet
     await typist.click(within(dialog).getByRole('button', { name: 'Discard chat' }));
-    await waitFor(() => expect(note()).toBe('This chat will be saved in “Work”.'));
+    await waitFor(() => expect(inFolder('Work')).toEqual(['Unnamed chat']));
     expect(document.documentElement.hasAttribute('data-incognito')).toBe(false);
+  });
+});
+
+describe('looking at other chats while a reply is being written', () => {
+  const alpha = chat('Alpha', [userMsg('q1'), bot('reply alpha')], { id: 'a', updatedAt: 2 });
+  const beta = chat('Beta', [userMsg('q2'), bot('reply beta')], { id: 'b', updatedAt: 1 });
+  const alt = (code: string) => fireEvent.keyDown(document.body, { code, key: code.replace('Key', '').toLowerCase(), altKey: true });
+  const savedChats = () => JSON.parse(localStorage.getItem('homegpt-chats') ?? '[]');
+  const open = async (title: string) => typist.click(await screen.findByText(title));
+
+  /** Alpha is open, you've sent a question, and the first words of the reply are in. */
+  async function writingInAlpha() {
+    start({ chats: [alpha, beta] });
+    await open('Alpha');
+    await screen.findByText('reply alpha');
+    await send('another question');
+    await requestArrives(1);
+    server.replies[0].say('part one');
+    await screen.findByText('part one');
+  }
+
+  it('lets you open another chat, and the reply carries on in its own chat, not in the one you opened', async () => {
+    await writingInAlpha();
+    await open('Beta');
+    expect(await screen.findByText('reply beta')).toBeTruthy();
+    expect(screen.queryByText('part one')).toBeNull();
+
+    server.replies[0].say(' part two');
+    await new Promise((r) => setTimeout(r, 60));
+    expect(screen.queryByText(/part two/)).toBeNull();
+    expect(screen.getByText('reply beta')).toBeTruthy();
+
+    server.replies[0].finish();
+    await waitFor(() => expect(savedChats().find((c: { id: string }) => c.id === 'a').messages.at(-1).content).toBe('part one part two'));
+    expect(screen.queryByText(/part two/)).toBeNull(); // still Beta on screen
+  });
+
+  it('shows the reply so far when you come back to its chat, and goes on streaming there', async () => {
+    await writingInAlpha();
+    await open('Beta');
+    await screen.findByText('reply beta');
+    server.replies[0].say(' part two');
+    await open('Alpha');
+    expect(await screen.findByText('part one part two')).toBeTruthy();
+    expect(document.querySelector('.msg.streaming')).not.toBeNull();
+    server.replies[0].say(' part three');
+    expect(await screen.findByText('part one part two part three')).toBeTruthy();
+    server.replies[0].finish();
+    await waitFor(() => expect(document.querySelector('.msg.streaming')).toBeNull());
+  });
+
+  it('marks the chat being written in, and its Delete is off while the others stay on', async () => {
+    await writingInAlpha();
+    await open('Beta');
+    expect(document.querySelector('.chat-row.writing .chat-title')?.textContent).toBe('Alpha');
+    await typist.click(await screen.findByRole('button', { name: 'Options for chat "Alpha"' }));
+    const deleteOf = (menu: HTMLElement) => (within(menu).getByRole('menuitem', { name: 'Delete' }) as HTMLButtonElement).disabled;
+    expect(deleteOf(await screen.findByRole('menu'))).toBe(true);
+    await typist.keyboard('{Escape}');
+    await typist.click(await screen.findByRole('button', { name: 'Options for chat "Beta"' }));
+    expect(deleteOf(await screen.findByRole('menu'))).toBe(false);
+  });
+
+  it('lets you rename the chat being written in, and the name stays when the reply finishes', async () => {
+    await writingInAlpha();
+    await typist.click(await screen.findByRole('button', { name: 'Options for chat "Alpha"' }));
+    await typist.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Rename' }));
+    await typist.keyboard('Renamed{Enter}');
+    expect((await screen.findAllByText('Renamed')).length).toBeGreaterThan(0);
+    server.replies[0].finish();
+    await waitFor(() => expect(savedChats().find((c: { id: string }) => c.id === 'a').messages.at(-1).content).toBe('part one'));
+    expect(savedChats().find((c: { id: string }) => c.id === 'a').title).toBe('Renamed');
+  });
+
+  it('does not send from another chat until the reply is done, and keeps what you typed', async () => {
+    await writingInAlpha();
+    await open('Beta');
+    await screen.findByText('reply beta');
+    expect(box().placeholder).toMatch(/another chat/);
+    await typist.click(box());
+    await typist.paste('my draft');
+    await typist.keyboard('{Enter}');
+    await new Promise((r) => setTimeout(r, 60));
+    expect(server.replies).toHaveLength(1);
+    expect(box().value).toBe('my draft');
+    expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
+
+    server.replies[0].finish();
+    await waitFor(() => expect(box().placeholder).toBe('Message'));
+    await typist.keyboard('{Enter}');
+    await requestArrives(2);
+    expect(lastUserText(server.replies[1])).toBe('my draft');
+  });
+
+  it('keeps queued messages with their chat: they wait while you are elsewhere, and go once you are back', async () => {
+    await writingInAlpha();
+    await send('queued one');
+    await waitFor(() => expect(queued()).toEqual(['queued one']));
+    await open('Beta');
+    await screen.findByText('reply beta');
+    expect(queued()).toEqual([]); // not shown in Beta
+
+    server.replies[0].finish();
+    await new Promise((r) => setTimeout(r, 100));
+    expect(server.replies).toHaveLength(1); // not sent into Beta, nor into Alpha behind your back
+
+    await open('Alpha');
+    await requestArrives(2);
+    expect(lastUserText(server.replies[1])).toBe('queued one');
+    expect(server.replies[1].body.messages.map((m) => m.content)).toContain('part one');
+  });
+
+  it('Esc stops the reply only in the chat it is being written in', async () => {
+    await writingInAlpha();
+    await open('Beta');
+    await screen.findByText('reply beta');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    await new Promise((r) => setTimeout(r, 50));
+    server.replies[0].say(' part two'); // not stopped: more still arrives
+    server.replies[0].finish();
+    await waitFor(() => expect(savedChats().find((c: { id: string }) => c.id === 'a').messages.at(-1).content).toBe('part one part two'));
+  });
+
+  it('Alt+N and the New chat button work meanwhile, but starting an incognito chat does not', async () => {
+    await writingInAlpha();
+    alt('KeyN');
+    await waitFor(() => expect(document.querySelector('.greeting')).not.toBeNull());
+    expect((topbarButton('Incognito chat') as HTMLButtonElement).disabled).toBe(true);
+    alt('KeyI');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(document.documentElement.hasAttribute('data-incognito')).toBe(false);
+    await typist.click(topbarButton('New chat'));
+    expect(document.querySelector('.greeting')).not.toBeNull();
+  });
+
+  it('an incognito chat being written cannot be left, since it would be lost', async () => {
+    start({ chats: [alpha] });
+    await typist.click(topbarButton('Incognito chat'));
+    await send('secret');
+    await requestArrives(1);
+    server.replies[0].say('shh');
+    await screen.findByText('shh');
+    await open('Alpha').catch(() => {});
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByText('shh')).toBeTruthy();
+    expect(document.documentElement.hasAttribute('data-incognito')).toBe(true);
+  });
+
+  it('the Copy button on a queued message copies its text', async () => {
+    start({ chats: [alpha] });
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    await open('Alpha');
+    await screen.findByText('reply alpha');
+    await send('first');
+    await requestArrives(1);
+    await send('please copy me');
+    await waitFor(() => expect(queued()).toEqual(['please copy me']));
+    const item = document.querySelector('.queue-item') as HTMLElement;
+    await typist.click(within(item).getByRole('button', { name: 'Copy' }));
+    expect(writeText).toHaveBeenCalledWith('please copy me');
+    expect(queued()).toEqual(['please copy me']); // still queued
+  });
+});
+
+describe('loading a model', () => {
+  const pick = async () => {
+    vi.mocked(lmstudio.listChatModels).mockResolvedValue([{ key: 'other', name: 'Other model', sizeBytes: 4e9, maxContext: 8192 }]);
+    vi.mocked(lmstudio.swapModel).mockClear();
+    start();
+    await typist.click(await screen.findByTitle('Change model'));
+    await typist.click(await screen.findByRole('option', { name: /Other model/ }));
+  };
+  const keep = () => screen.getByRole('checkbox', { name: /Keep model in memory/ }) as HTMLInputElement;
+
+  it('has "Keep model in memory" off by default, and loads the model without it', async () => {
+    await pick();
+    expect(keep().checked).toBe(false);
+    await typist.click(screen.getByRole('button', { name: 'Load' }));
+    await waitFor(() => expect(lmstudio.swapModel).toHaveBeenCalled());
+    expect(vi.mocked(lmstudio.swapModel).mock.calls[0][1].keepInMemory).toBeFalsy();
+  });
+
+  it('loads it kept in memory when you tick the box, and remembers that for the model', async () => {
+    await pick();
+    await typist.click(keep());
+    await typist.click(screen.getByRole('button', { name: 'Load' }));
+    await waitFor(() => expect(lmstudio.swapModel).toHaveBeenCalled());
+    expect(vi.mocked(lmstudio.swapModel).mock.calls[0][1].keepInMemory).toBe(true);
+    expect(JSON.parse(localStorage.getItem('homegpt-settings')!).models.other.keepInMemory).toBe(true);
+  });
+});
+
+describe('scrolling while a reply is being written', () => {
+  const alpha = chat('Alpha', [userMsg('q1'), bot('reply alpha')], { id: 'a', updatedAt: 1 });
+  const VIEW = 500; // the height of the chat area
+
+  /**
+   * The test browser has no layout, so the chat area is given a height and a scroll position that the test controls.
+   * Like a real browser, it reports a scroll after the page sets its position.
+   */
+  function fakeScroller() {
+    const el = document.querySelector<HTMLElement>('main.scroll')!;
+    const view = { height: 3000, top: 0 };
+    Object.defineProperty(el, 'scrollHeight', { get: () => view.height, configurable: true });
+    Object.defineProperty(el, 'clientHeight', { get: () => VIEW, configurable: true });
+    Object.defineProperty(el, 'clientWidth', { get: () => 800, configurable: true });
+    Object.defineProperty(el, 'scrollTop', {
+      get: () => view.top,
+      set: (value: number) => {
+        view.top = Math.min(value, view.height - VIEW); // can't go below the end, as in a browser
+        setTimeout(() => el.dispatchEvent(new Event('scroll')));
+      },
+      configurable: true,
+    });
+    const bottom = () => view.height - VIEW;
+    /** You scroll to a position (a distance above the very bottom). */
+    const scrollTo = (aboveBottom: number) => {
+      view.top = bottom() - aboveBottom;
+      fireEvent.scroll(el);
+    };
+    return { el, view, bottom, scrollTo };
+  }
+
+  /** A chat is open, you have sent a message, and the first piece of the reply has arrived. */
+  async function streaming() {
+    start({ chats: [alpha] });
+    await typist.click(await screen.findByText('Alpha'));
+    await screen.findByText('reply alpha');
+    const scroller = fakeScroller();
+    await send('another question');
+    await requestArrives(1);
+    server.replies[0].say('first');
+    await waitFor(() => expect(document.querySelector('.msg.streaming .content')?.textContent).toContain('first'));
+    await new Promise((r) => setTimeout(r, 20));
+    // The next piece of the reply: the page grows by `grow` pixels.
+    const nextPiece = async (word: string, grow = 100) => {
+      scroller.view.height += grow;
+      server.replies[0].say(` ${word}`);
+      await waitFor(() => expect(document.querySelector('.msg.streaming .content')?.textContent).toContain(word));
+      await new Promise((r) => setTimeout(r, 20));
+    };
+    return { ...scroller, nextPiece };
+  }
+
+  it('follows the reply down the page while you leave it alone', async () => {
+    const s = await streaming();
+    await s.nextPiece('second');
+    expect(s.view.top).toBe(s.bottom());
+    await s.nextPiece('third', 300);
+    expect(s.view.top).toBe(s.bottom());
+  });
+
+  it('stops following as soon as you wheel up, even for a small scroll that is still near the bottom', async () => {
+    const s = await streaming();
+    s.view.top = s.bottom() - 30; // 30 pixels up: well inside the zone where it used to keep snapping back
+    fireEvent.wheel(s.el, { deltaY: -100 });
+    fireEvent.scroll(s.el);
+    const where = s.view.top;
+    await s.nextPiece('second');
+    await s.nextPiece('third');
+    expect(s.view.top).toBe(where); // not pulled down
+    expect(await screen.findByRole('button', { name: 'Scroll to the newest message' })).toBeTruthy();
+  });
+
+  it('stops following when you press the Up key in the chat', async () => {
+    const s = await streaming();
+    fireEvent.keyDown(s.el, { key: 'ArrowUp' });
+    s.scrollTo(25);
+    const where = s.view.top;
+    await s.nextPiece('second');
+    expect(s.view.top).toBe(where);
+  });
+
+  it('stops following when you drag the scroll bar up', async () => {
+    const s = await streaming();
+    fireEvent(s.el, new MouseEvent('pointerdown', { bubbles: true, clientX: 810 })); // on the bar: past the 800 pixels it shows
+    s.scrollTo(20);
+    const where = s.view.top;
+    await s.nextPiece('second');
+    await s.nextPiece('third');
+    expect(s.view.top).toBe(where);
+    fireEvent(window, new MouseEvent('pointerup'));
+  });
+
+  it('stops following when you swipe up on a touch screen', async () => {
+    const s = await streaming();
+    fireEvent.touchStart(s.el);
+    s.scrollTo(25);
+    const where = s.view.top;
+    await s.nextPiece('second');
+    expect(s.view.top).toBe(where);
+  });
+
+  it('does not count a click on the text itself as scrolling', async () => {
+    const s = await streaming();
+    fireEvent(s.el.querySelector('.column')!, new MouseEvent('pointerdown', { bubbles: true, clientX: 300 }));
+    await s.nextPiece('second');
+    expect(s.view.top).toBe(s.bottom());
+  });
+
+  it('follows the reply again once you scroll back down to the bottom', async () => {
+    const s = await streaming();
+    fireEvent.wheel(s.el, { deltaY: -100 });
+    s.scrollTo(200);
+    await s.nextPiece('second');
+    expect(s.view.top).toBeLessThan(s.bottom());
+
+    // Back down near the end, by the scroll bar or a drag: nothing that says which way, so it goes by where the page moved.
+    await new Promise((r) => setTimeout(r, 800)); // (a moment after the wheel, as when you scroll up, read, then come back)
+    s.scrollTo(10);
+    await s.nextPiece('third');
+    expect(s.view.top).toBe(s.bottom());
+  });
+
+  it('follows the reply again when you press the scroll-to-newest button', async () => {
+    const s = await streaming();
+    fireEvent.wheel(s.el, { deltaY: -100 });
+    s.scrollTo(300);
+    await s.nextPiece('second');
+    // (clicked straight after scrolling up, so the scroll the click causes arrives while that scroll still counts as recent)
+    await typist.click(await screen.findByRole('button', { name: 'Scroll to the newest message' }));
+    expect(s.view.top).toBe(s.bottom());
+    await s.nextPiece('third');
+    expect(s.view.top).toBe(s.bottom());
+  });
+
+  it('keeps following when the page moves up by itself (for example a block shrinks), since that is not you scrolling', async () => {
+    const s = await streaming();
+    s.view.height -= 200; // the page gets shorter, so the browser moves the position up
+    s.view.top = s.bottom();
+    fireEvent.scroll(s.el);
+    await s.nextPiece('second');
+    expect(s.view.top).toBe(s.bottom());
+  });
+
+  it('does not stop following when you wheel up but there is nothing above to scroll to', async () => {
+    const s = await streaming();
+    s.view.top = 0;
+    fireEvent.wheel(s.el, { deltaY: -100 });
+    await s.nextPiece('second');
+    expect(s.view.top).toBe(s.bottom());
+  });
+
+  it('still stops following when the page grows in the very moment of your small scroll step', async () => {
+    const s = await streaming();
+    // In one moment the reply makes the page 100px taller and you scroll up a little. Where the page ends up is
+    // lower than the last scroll report, so it can look like scrolling down; your wheel says it was up.
+    s.view.height += 100;
+    fireEvent.wheel(s.el, { deltaY: -30 });
+    s.view.top = s.bottom() - 8;
+    fireEvent.scroll(s.el);
+    const where = s.view.top;
+    await s.nextPiece('second');
+    expect(s.view.top).toBe(where);
+  });
+
+  it('follows again when you wheel down to the bottom', async () => {
+    const s = await streaming();
+    fireEvent.wheel(s.el, { deltaY: -100 });
+    s.scrollTo(200);
+    await s.nextPiece('second');
+    expect(s.view.top).toBeLessThan(s.bottom());
+
+    fireEvent.wheel(s.el, { deltaY: 100 });
+    s.scrollTo(10);
+    await s.nextPiece('third');
+    expect(s.view.top).toBe(s.bottom());
   });
 });

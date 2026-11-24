@@ -30,6 +30,7 @@ import {
 } from './icons';
 import Sidebar from './Sidebar';
 import ConfirmDialog from './ConfirmDialog';
+import CopyButton from './CopyButton';
 import {
   CHATS_KEY,
   FOLDERS_KEY,
@@ -41,6 +42,7 @@ import {
   saveSidebarSize,
   savedChatsUnreadable,
   titleFrom,
+  UNNAMED_CHAT,
   type Chat,
   type Folder,
 } from './storage';
@@ -86,12 +88,6 @@ const draggingFiles = (e: { dataTransfer: DataTransfer | null }) => !!e.dataTran
 
 /** True when the chat is scrolled to (or within a few lines of) its newest message. */
 const nearBottom = (el: HTMLElement) => el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-
-function withLast(messages: ChatMessage[], patch: Partial<ChatMessage>): ChatMessage[] {
-  const copy = messages.slice();
-  copy[copy.length - 1] = { ...copy[copy.length - 1], ...patch };
-  return copy;
-}
 
 /**
  * Waits for `promise`, but gives up after `ms` (throwing an Error with `timeoutMessage`) or as soon as `signal`
@@ -172,7 +168,10 @@ export default function App() {
   const attachInput = useRef<HTMLInputElement>(null);
   const [searchFocus, setSearchFocus] = useState(0); // goes up on Ctrl+K, to focus the sidebar's search field
   const [jump, setJump] = useState<{ chatId: string; query: string } | null>(null); // scroll to a search match once the chat is open
-  const [newChatFolder, setNewChatFolder] = useState<string | null>(null); // the folder the empty new chat on screen will be saved in
+  const [writingIn, setWritingIn] = useState<string | null>(null); // the chat a reply is being written in (you can look at other chats meanwhile)
+  const [queueChat, setQueueChat] = useState<string | null>(null); // the chat the queued messages belong to
+  const streamRef = useRef<{ chatId: string; snapshot: () => ChatMessage[] } | null>(null); // the reply being written: its chat, and the chat as it is so far
+  const viewId = useRef<string | null>(null); // the saved chat on screen
   const [queueExpanded, setQueueExpanded] = useState(false); // show every queued message, not just the first few
   const [leavingItem, setLeavingItem] = useState<{ id: string; text: string; images: string[]; index: number } | null>(null); // a removed row, shrinking away
   const [queuePaused, setQueuePaused] = useState(false); // after Stop or an error, the queue waits for you
@@ -190,8 +189,16 @@ export default function App() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const editRef = useRef<HTMLTextAreaElement>(null);
   const stickToBottom = useRef(true);
+  const lastScrollTop = useRef(0); // to tell which way the chat was scrolled
+  const userScroll = useRef<{ at: number; held: boolean; direction: 'up' | 'down' | null }>({ at: 0, held: false, direction: null }); // when and which way you last wheeled, touched, pressed a key or held the mouse on the chat
   const [scrolledUp, setScrolledUp] = useState(false); // shows the "scroll to the newest message" button
   const [retrying, setRetrying] = useState(false); // the error's Retry button is checking for LM Studio
+
+  // A reply may be written in one chat while you look at another. These tell the two apart.
+  const viewKey = incognito ? 'incognito' : activeId; // which chat is on screen
+  const writingHere = generating && writingIn === viewKey; // the reply being written is in the chat on screen
+  const queueHere = queueChat === viewKey; // the queued messages belong to the chat on screen
+  const shownQueue = queueHere ? queue : [];
 
   useAutoGrow(inputRef);
   useAutoGrow(editRef);
@@ -337,11 +344,10 @@ export default function App() {
       const chat: Chat = {
         ...existing, // keeps its folder
         id,
-        title: existing ? existing.title : titleFrom(msgs[0].content),
+        // A chat started from a folder's menu is "Unnamed chat" until you name it; if you haven't, its first message names it.
+        title: existing && !(existing.messages.length === 0 && existing.title === UNNAMED_CHAT) ? existing.title : titleFrom(msgs[0].content),
         messages: msgs,
         updatedAt: Date.now(),
-        // A new chat started from a folder's menu is saved in that folder (if it still exists).
-        ...(!existing && newChatFolder && folders.some((f) => f.id === newChatFolder) ? { folderId: newChatFolder } : {}),
       };
       return [chat, ...prev.filter((c) => c.id !== id)];
     });
@@ -384,9 +390,51 @@ export default function App() {
     const el = scrollRef.current;
     if (!el) return;
     stickToBottom.current = true; // and keep following a reply that is still streaming
+    userScroll.current = { at: 0, held: false, direction: null }; // the scroll this causes isn't you scrolling up
     el.scrollTop = el.scrollHeight;
     inputRef.current?.focus(); // the button disappears, so focus goes somewhere useful
   }
+
+  // Following the reply: while one is written, the newest text is kept in view, until YOU scroll up. That has to be noticed
+  // from what you do, not from how far you've gone: a mouse wheel or touchpad scrolls in many small steps, the first of
+  // which is still near the bottom, and the next piece of the reply would snap the page back down and undo the rest.
+  // `direction` is what the wheel or key says (null when the input can't say, like a touch or the scroll bar).
+  const markUserScroll = (direction: 'up' | 'down' | null = null) => {
+    userScroll.current.at = Date.now();
+    userScroll.current.direction = direction;
+  };
+  const stopFollowing = () => {
+    stickToBottom.current = false;
+  };
+
+  function onChatScroll(e: React.UIEvent<HTMLElement>) {
+    const el = e.currentTarget;
+    const movedUp = el.scrollTop < lastScrollTop.current;
+    lastScrollTop.current = el.scrollTop;
+    const near = nearBottom(el);
+    const byYou = userScroll.current.held || Date.now() - userScroll.current.at < 700; // a smooth scroll goes on for a moment
+    // Which way: your wheel or key says so. Where the page ended up can't, because the reply may have grown it in the
+    // same moment, and browsers report several scroll steps as one.
+    const direction = (byYou && userScroll.current.direction) || (movedUp ? 'up' : 'down');
+    if (!near) stickToBottom.current = false;
+    else if (direction === 'down') stickToBottom.current = true; // back at the bottom: follow the reply again
+    else if (byYou) stickToBottom.current = false; // you are scrolling up, still near the bottom
+    // (Otherwise the page moved up by itself, e.g. a block shrank. That doesn't mean you want to stop following.)
+    setScrolledUp(!near);
+  }
+
+  // Holding the mouse on the chat (e.g. dragging its scroll bar) counts as scrolling, until it's let go.
+  useEffect(() => {
+    const release = () => {
+      userScroll.current.held = false;
+    };
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
+    return () => {
+      window.removeEventListener('pointerup', release);
+      window.removeEventListener('pointercancel', release);
+    };
+  }, []);
 
   /** The error's Retry button: checks for LM Studio again and, if it's there now, sends what's in the input box. */
   async function retryConnection() {
@@ -443,13 +491,16 @@ export default function App() {
 
     // Save the conversation up to here right away (so an edit or regenerate cuts the saved copy too).
     const chatId = activeId ?? crypto.randomUUID();
-    if (!incognito) setActiveId(chatId);
+    if (!incognito) {
+      setActiveId(chatId);
+      viewId.current = chatId;
+    }
     commit(chatId, history);
-    setNewChatFolder(null); // it has been used: the chat exists now, and keeps its folder
 
     setEditingIndex(null);
     const replyId = crypto.randomUUID(); // the same while it streams and once it's saved
     setMessages([...history, { id: replyId, role: 'assistant', content: '' }]);
+    setWritingIn(incognito ? 'incognito' : chatId);
     setGenerating(true);
     stickToBottom.current = true;
     setScrolledUp(false);
@@ -483,10 +534,18 @@ export default function App() {
         ...(tokensPerSecond ? { tokensPerSecond } : {}),
       };
     };
+    /** The chat as it is so far, ending with the reply being written. */
+    const soFar = (): ChatMessage[] => [
+      ...history,
+      { id: replyId, role: 'assistant', content: '', ...view(true), ...(trimmed ? { trimmed } : {}) },
+    ];
+    // You may have opened another chat meanwhile: the reply carries on, but only its own chat shows it.
+    const visible = () => incognito || viewId.current === chatId;
+    streamRef.current = { chatId, snapshot: soFar };
     // Re-render at most once per animation frame, not once per token.
     const flush = () => {
       frame = 0;
-      setMessages((prev) => withLast(prev, view(true)));
+      if (visible()) setMessages(soFar());
     };
 
     /** If the chat is too long for the model's context, leaves out older messages (only in what is sent). */
@@ -510,7 +569,7 @@ export default function App() {
         if (fitted) {
           sent = fitted.messages;
           trimmed = fitted.trimmed;
-          if (trimmed) setMessages((prev) => withLast(prev, { trimmed: true }));
+          if (trimmed && visible()) setMessages(soFar());
         }
       } catch (e) {
         if (e instanceof ContextError || controller.signal.aborted) throw e;
@@ -545,12 +604,14 @@ export default function App() {
       const finalMessages: ChatMessage[] = gotReply
         ? [...history, { id: replyId, role: 'assistant', content: '', ...final, ...(trimmed ? { trimmed } : {}) }]
         : history;
-      setMessages(finalMessages);
+      if (visible()) setMessages(finalMessages);
       commit(chatId, finalMessages);
       setGenerating(false);
+      setWritingIn(null);
+      streamRef.current = null;
       abortRef.current = null;
       busy.current = false;
-      inputRef.current?.focus();
+      if (visible()) inputRef.current?.focus();
       if (!gotReply && !stopped && !failed) setError('The model sent back an empty reply. Try again, or try another model.');
       // Stopping a reply, or an error, pauses the queue instead of sending the next message.
       if (stopped || failed || !gotReply) setQueuePaused(true);
@@ -582,10 +643,13 @@ export default function App() {
     // While a reply is being written, the message waits in the queue. So it does while the queue is paused with
     // messages in it: it joins the end, so they're answered in the order you wrote them, and the queue stays
     // paused until you choose Resume.
-    const queuePausedWithItems = queuePaused && queue.length > 0;
+    const queuePausedWithItems = queuePaused && shownQueue.length > 0;
+    if (generating && !writingHere) return; // a reply is being written in another chat: this one waits for it
     if (busy.current || queuePausedWithItems) {
       if (busy.current && loadingRef.current) return;
-      setQueue((q) => [...q, { id: crypto.randomUUID(), text, images }]);
+      const item = { id: crypto.randomUUID(), text, images };
+      setQueue((q) => (queueHere ? [...q, item] : [item]));
+      setQueueChat(viewKey);
       setInput('');
       setAttachments([]);
       return;
@@ -661,7 +725,7 @@ export default function App() {
   // Settings or Preferences closing, or anything that marks the key as handled (a ⋯ menu, a confirmation
   // panel, the model list, a rename box, or the search box clearing its text).
   useEffect(() => {
-    if (!generating) return;
+    if (!writingHere) return; // looking at another chat: Esc isn't for the reply there
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing) return;
       if (settingsOpen || prefsOpen || leaveAction) return;
@@ -670,7 +734,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [generating, settingsOpen, prefsOpen, leaveAction]);
+  }, [writingHere, settingsOpen, prefsOpen, leaveAction]);
 
   // After opening a chat from a search result, scroll to the first matching message and flash it.
   useEffect(() => {
@@ -715,7 +779,7 @@ export default function App() {
 
   // Sends the queue one message at a time: the next goes only once the model has finished the previous reply.
   useEffect(() => {
-    if (generating || busy.current || queuePaused || queue.length === 0 || loading) return;
+    if (generating || busy.current || queuePaused || queue.length === 0 || loading || !queueHere) return;
     const next = queue[0];
     setQueue((q) => q.slice(1));
     replyTo([...messages, userMessage(next.text, next.images)]).then((started) => {
@@ -724,7 +788,7 @@ export default function App() {
         setQueuePaused(true);
       }
     });
-  }, [generating, queuePaused, queue, loading, messages]);
+  }, [generating, queuePaused, queue, loading, messages, queueHere]);
 
   /**
    * The message that Regenerate at `index` answers again: that message if it's yours, otherwise your nearest
@@ -847,9 +911,13 @@ export default function App() {
     switchModel(m.key, m.name, options);
   }
 
-  /** Shows chat `id` (or an empty new chat when null, which is saved in `folderId` if one is given). */
+  /**
+   * Shows chat `id`, or an empty new chat when null. With a `folderId` the new chat is created at once, in that folder,
+   * called "Unnamed chat". Works while a reply is being written (it carries on in its own chat), except to leave an
+   * incognito chat, which can't be left while it's being written: it would be lost.
+   */
   function showChat(id: string | null, query?: string, folderId?: string) {
-    if (busy.current) return;
+    if (busy.current && incognito) return;
     // Leaving an incognito chat that has messages throws it away, so ask first.
     if (incognito && messages.length > 0) {
       setLeaveAction(() => () => openChat(id, query, folderId));
@@ -882,18 +950,37 @@ export default function App() {
 
   function openChat(id: string | null, query?: string, folderId?: string) {
     setJump(id && query ? { chatId: id, query } : null);
-    setNewChatFolder(id === null && folderId ? folderId : null);
-    if (folderId) setFolders((prev) => prev.map((f) => (f.id === folderId ? { ...f, collapsed: false } : f))); // so the chat can be seen where it will go
-    // Images waiting in the input box or the queue were never stored; they go with the chat being left.
-    forgetImages([...attachments, ...queue.flatMap((item) => item.images)]);
+    // A new chat from a folder's menu exists at once, in that folder, so it can be named before anything is sent.
+    let target = id;
+    if (id === null && folderId && folders.some((f) => f.id === folderId)) {
+      const fresh: Chat = { id: crypto.randomUUID(), title: UNNAMED_CHAT, messages: [], updatedAt: Date.now(), folderId };
+      target = fresh.id;
+      setChats((prev) => [fresh, ...prev]);
+      setFolders((prev) => prev.map((f) => (f.id === folderId ? { ...f, collapsed: false } : f))); // so the chat can be seen
+    }
+    // Leaving a chat that is still empty and unnamed throws it away. (Once you've named it, it stays.)
+    const leaving = chats.find((c) => c.id === activeId);
+    if (leaving && leaving.id !== target && leaving.messages.length === 0 && leaving.title === UNNAMED_CHAT && !busy.current) {
+      setChats((prev) => prev.filter((c) => c.id !== leaving.id));
+    }
+    // Images waiting in the input box were never stored; they go with the chat being left. So do the queue's,
+    // unless a reply is being written (the queue then waits with its chat) or you are going back to the queue's own chat.
+    forgetImages(attachments);
+    if (!busy.current && target !== queueChat) {
+      forgetImages(queue.flatMap((item) => item.images));
+      setQueue([]);
+      setQueuePaused(false);
+      setQueueChat(null);
+    }
     if (incognito) forgetIncognitoImages();
     setAttachments([]);
-    setQueue([]);
-    setQueuePaused(false);
     setIncognito(false);
     setLeaveAction(null);
-    setActiveId(id);
-    setMessages(chats.find((c) => c.id === id)?.messages ?? []);
+    setActiveId(target);
+    viewId.current = target;
+    // Coming back to the chat a reply is being written in shows the reply so far.
+    const writing = streamRef.current;
+    setMessages(writing && writing.chatId === target ? writing.snapshot() : (chats.find((c) => c.id === target)?.messages ?? []));
     setInput('');
     setError(null);
     setEditingIndex(null);
@@ -942,7 +1029,7 @@ export default function App() {
   }
 
   function deleteChat(id: string) {
-    if (busy.current) return;
+    if (busy.current && (incognito || id === writingIn)) return; // not the chat a reply is being written in
     setChats((prev) => prev.filter((c) => c.id !== id));
     if (id === activeId) showChat(null);
   }
@@ -1009,7 +1096,7 @@ export default function App() {
   useLayoutEffect(() => {
     shortcutActions.current = {
       blocked: settingsOpen || prefsOpen || !!leaveAction, // a panel or a confirmation is open
-      idle: !generating, // while a reply is being written, the buttons these keys stand for are switched off too
+      idle: !generating, // while a reply is being written, incognito and copy-newest-reply are switched off, like their buttons
       newChat: () => showChat(null),
       incognito: toggleIncognito,
       step: stepChat,
@@ -1034,11 +1121,11 @@ export default function App() {
       // Alt alone (not AltGr, which also sends Ctrl, and not with Shift or Windows' language switch).
       if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
       const actions: Record<string, (() => void) | undefined> = {
-        KeyN: () => now.idle && now.newChat(),
+        KeyN: now.newChat,
         KeyI: () => now.idle && now.incognito(),
         KeyC: () => now.idle && now.copyLast(),
-        ArrowUp: () => now.idle && now.step(-1),
-        ArrowDown: () => now.idle && now.step(1),
+        ArrowUp: () => now.step(-1),
+        ArrowDown: () => now.step(1),
       };
       const action = actions[e.code];
       if (!action) return;
@@ -1077,9 +1164,9 @@ export default function App() {
 
   const composer = (
     <>
-      {(queue.length > 0 || leavingItem) && (
+      {(shownQueue.length > 0 || leavingItem) && (
         <div className={`queue${queuePaused ? ' paused' : ''}`} aria-label="Queued messages">
-          {queuePaused && queue.length > 0 && (
+          {queuePaused && shownQueue.length > 0 && (
             <div className="queue-head">
               <span className="queue-status">
                 <span className="queue-dot" />
@@ -1102,7 +1189,7 @@ export default function App() {
             </div>
           )}
           {(() => {
-            const rows: { id: string; text: string; images: string[]; leaving?: boolean }[] = queue.map((item) => ({ ...item }));
+            const rows: { id: string; text: string; images: string[]; leaving?: boolean }[] = shownQueue.map((item) => ({ ...item }));
             const imageCount = (n: number) => (n === 0 ? '' : n === 1 ? '1 image' : `${n} images`);
             if (leavingItem) rows.splice(Math.min(leavingItem.index, rows.length), 0, { ...leavingItem, leaving: true });
             const shown = queueExpanded || rows.length <= 3 ? rows : rows.slice(0, 3);
@@ -1115,6 +1202,7 @@ export default function App() {
                       {[row.text, imageCount(row.images.length)].filter(Boolean).join(' · ')}
                     </span>
                     {i === 0 && !row.leaving && !queuePaused && <span className="queue-next">Up next</span>}
+                    {!row.leaving && row.text && <CopyButton className="queue-remove" text={row.text} />}
                     {!row.leaving && (
                       <button
                         className="queue-remove"
@@ -1137,7 +1225,7 @@ export default function App() {
           })()}
         </div>
       )}
-    <div className={`inputbox${queue.length > 0 ? ' has-queue' : ''}${dragOver ? ' drop-target' : ''}`}>
+    <div className={`inputbox${shownQueue.length > 0 ? ' has-queue' : ''}${dragOver ? ' drop-target' : ''}`}>
       {attachments.length > 0 && (
         <div className="attachments">
           {attachments.map((id) => (
@@ -1181,16 +1269,18 @@ export default function App() {
         placeholder={
           loading
             ? `Loading ${loading.name}…`
-            : generating
-              ? 'Queue another message…'
-              : queuePaused && queue.length > 0
-                ? 'Add to the paused queue…'
-                : 'Message'
+            : generating && !writingHere
+              ? 'A reply is being written in another chat…'
+              : generating
+                ? 'Queue another message…'
+                : queuePaused && shownQueue.length > 0
+                  ? 'Add to the paused queue…'
+                  : 'Message'
         }
         rows={1}
         autoFocus
       />
-      {generating && !input.trim() && attachments.length === 0 ? (
+      {writingHere && !input.trim() && attachments.length === 0 ? (
         <button className="icon-button" aria-label="Stop" title="Stop (Esc)" onClick={() => abortRef.current?.abort()}>
           <StopIcon />
         </button>
@@ -1198,10 +1288,16 @@ export default function App() {
         <button
           className="icon-button"
           aria-label="Send"
-          title={generating || (queuePaused && queue.length > 0) ? sendTitle.replace('Send', 'Queue') : sendTitle}
+          title={
+            generating && !writingHere
+              ? 'Wait for the reply in the other chat to finish'
+              : generating || (queuePaused && shownQueue.length > 0)
+                ? sendTitle.replace('Send', 'Queue')
+                : sendTitle
+          }
           onClick={send}
           // Dimmed while there's nothing to send, so it's clear at a glance whether Enter would do anything.
-          disabled={!!loading || (!input.trim() && attachments.length === 0)}
+          disabled={!!loading || (generating && !writingHere) || (!input.trim() && attachments.length === 0)}
         >
           <SendIcon />
         </button>
@@ -1265,7 +1361,7 @@ export default function App() {
             aria-label="New chat"
             title="New chat (Alt+N)"
             onClick={() => showChat(null)}
-            disabled={generating}
+            disabled={generating && incognito}
           >
             <ComposeIcon />
           </button>
@@ -1277,7 +1373,8 @@ export default function App() {
           chats={chats}
           folders={folders}
           activeId={activeId}
-          locked={generating}
+          writingId={writingIn}
+          locked={generating && incognito}
           size={sidebarSize}
           onSize={setSidebarSize}
           onNew={() => showChat(null)}
@@ -1318,9 +1415,6 @@ export default function App() {
               <div className="column">
                 <h1 className="greeting">{incognito ? 'Incognito chat' : greeting}</h1>
                 {incognito && <p className="incognito-note">Nothing here is saved. It disappears when you leave.</p>}
-                {!incognito && newChatFolder && folders.some((f) => f.id === newChatFolder) && (
-                  <p className="folder-note">This chat will be saved in “{folders.find((f) => f.id === newChatFolder)?.name}”.</p>
-                )}
                 {composer}
                 {errorCard}
               </div>
@@ -1330,10 +1424,27 @@ export default function App() {
               <main
                 className="scroll"
                 ref={scrollRef}
-                onScroll={(e) => {
-                  const near = nearBottom(e.currentTarget);
-                  stickToBottom.current = near;
-                  setScrolledUp(!near);
+                onScroll={onChatScroll}
+                onWheel={(e) => {
+                  markUserScroll(e.deltaY < 0 ? 'up' : 'down');
+                  // Wheeling up stops the following at once, if there is anything above to scroll to.
+                  if (e.deltaY < 0 && e.currentTarget.scrollTop > 0) stopFollowing();
+                }}
+                onTouchStart={() => markUserScroll()}
+                onTouchMove={() => markUserScroll()}
+                onKeyDown={(e) => {
+                  const up = e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Home';
+                  const down = e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === 'End' || e.key === ' ';
+                  markUserScroll(up ? 'up' : down ? 'down' : null);
+                  if (up && e.currentTarget.scrollTop > 0) stopFollowing();
+                }}
+                onPointerDown={(e) => {
+                  // The scroll bar is part of this element but outside what it shows (clientWidth).
+                  const onScrollBar = e.clientX - e.currentTarget.getBoundingClientRect().left >= e.currentTarget.clientWidth;
+                  if (onScrollBar) {
+                    userScroll.current.held = true;
+                    markUserScroll();
+                  }
                 }}
               >
                 <div className="column">
@@ -1374,7 +1485,7 @@ export default function App() {
                         message={m}
                         index={i}
                         generating={generating}
-                        streaming={generating && i === messages.length - 1}
+                        streaming={writingHere && i === messages.length - 1}
                         canRegenerate={firstUser >= 0 && i >= firstUser}
                         thinkingView={settings.thinking}
                         showSpeed={settings.showSpeed}
