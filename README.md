@@ -37,6 +37,24 @@ Open http://localhost:5173 in Edge or Chrome.
 
 The built app and `npm run dev` both use port 5173, and your saved chats belong to that address, so only one can run at a time. Before using `npm run dev`, run `stop-bobgpt.bat`; otherwise the dev server moves to another port and your chats won't appear there.
 
+## On Linux (including Bazzite)
+
+The app is the same on Linux; only the launcher differs. Everything below lives in your home folder, so it suits immutable systems like Bazzite, where you shouldn't add packages to the system itself.
+
+1. **Node.js:** on Bazzite, `brew install node` (Homebrew comes with it). On other systems use their package manager, or nvm.
+2. **LM Studio:** download the Linux AppImage from lmstudio.ai. On Bazzite, add it with Gear Lever (from Flathub) so it gets a menu entry and updates. Then do the one-time setup above (server on port 1234, CORS on). On a dual-boot computer it can use the same models folder as Windows: in LM Studio's My Models page, change the models folder to the Windows one.
+3. **BobGPT:** `git clone` this repository, then in its folder run `npm install` and `./install-linux.sh`.
+
+`install-linux.sh` adds **BobGPT** to the app menu, with its icon, and a service that starts the server when you log in, without opening a browser. Run `./install-linux.sh no-autostart` for the menu entry alone, and `./install-linux.sh remove` to take both away. Run it again if you move the folder.
+
+- **`./start-bobgpt.sh`** (or BobGPT in the app menu) does what `start-bobgpt.bat` does: it builds the app if the code has changed, starts the server in the background and opens http://localhost:5173. It opens Firefox, including the Flatpak Firefox that Bazzite comes with; change `BOBGPT_BROWSER` near the top of the script to `chrome` or `chromium` (an app-style window) or `default`.
+- **`./stop-bobgpt.sh`** stops the server, as does right-clicking BobGPT in the app menu → Stop BobGPT's server. If the server was started at login, it starts again at the next login.
+- The server's output goes to `~/.local/state/bobgpt/server.log`; for the one started at login, use `journalctl --user -u bobgpt`.
+
+Chats are saved by the browser, so chats from Windows don't appear on Linux by themselves, even on the same computer. To bring them over, use Preferences → Your data → Back up on one, and Restore on the other. Restoring only adds chats that aren't there yet, so you can do it again later without duplicates.
+
+On a gaming computer, a loaded model takes graphics memory that games also want. Unload it in LM Studio (or leave **Keep model in memory** off) before starting something demanding.
+
 ## Installing it as an app
 
 Firefox can't install web apps on Windows, so with Firefox use the Desktop shortcut above. In Edge or Chrome:
