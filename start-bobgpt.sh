@@ -35,7 +35,7 @@ fail() {
 command -v node >/dev/null 2>&1 || fail "BobGPT needs Node.js. Install it (on Bazzite: brew install node), then run: npm install"
 [ -f node_modules/vite/bin/vite.js ] || fail "BobGPT isn't set up yet. Open a terminal in $PWD and run:  npm install"
 
-listening() { (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; }
+listening() { (exec 3<>"/dev/tcp/localhost/$PORT") 2>/dev/null; }
 
 # Build when there is no build yet, or when the code is newer than it.
 if [ ! -f dist/index.html ] ||
